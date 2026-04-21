@@ -1,0 +1,41 @@
+# ── Secrets (NEVER commit these) ──────────────────────────────────────────────
+.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Data (raw fetched data stays local — sample/ is the exception) ────────────
+data/*.csv
+data/*.json
+data/*.parquet
+!data/sample/          # sample data IS committed so the project runs without a key
+
+# ── Models (too large for git — use Git LFS or HuggingFace Hub) ───────────────
+models/*.pt
+models/*.pkl
+models/*.joblib
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
