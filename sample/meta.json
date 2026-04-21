@@ -1,0 +1,10 @@
+{
+  "fetched_at": "2026-04-18T07:39:55.615368Z",
+  "days_back": 14,
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "GOOGL"
+  ],
+  "note": "Pre-fetched sample data \u2014 safe to commit. Re-generate with: python fetch_sample_data.py"
+}
