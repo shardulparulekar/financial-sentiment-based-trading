@@ -268,6 +268,17 @@ def load_trending_news(n: int = 3) -> list[dict]:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def load_market_sentiment() -> dict:
+    """Score sentiment across all markets — cached for 1 hour."""
+    try:
+        from src.market_sentiment import MarketSentimentScorer
+        scorer = MarketSentimentScorer()
+        return scorer.score_all_markets()
+    except Exception as e:
+        return {}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def search_global_news(query: str, max_results: int = 10) -> list[dict]:
     """Search global RSS news for any query string."""
     try:
@@ -463,6 +474,64 @@ if st.session_state.active_tab == "home":
                     <div style="color:#6b7280;font-size:0.82rem;margin-top:0.4rem">Data unavailable</div>
                 </div>
                 """, unsafe_allow_html=True)
+
+    # ── Market sentiment ──────────────────────────────────────────────────────
+    st.markdown("#### 🧠 Market sentiment (FinBERT)")
+    st.caption("Aggregate sentiment scored from representative stock baskets — updates hourly.")
+
+    with st.spinner("Scoring market sentiment…"):
+        mkt_sentiment = load_market_sentiment()
+
+    if mkt_sentiment:
+        SENTIMENT_MARKETS = ["🇺🇸 USA", "🇮🇳 India", "🇪🇺 Europe", "🇨🇳 China / HK", "🇯🇵 Japan"]
+        sent_cols = st.columns(len(SENTIMENT_MARKETS))
+        for col, mkt in zip(sent_cols, SENTIMENT_MARKETS):
+            s = mkt_sentiment.get(mkt, {})
+            score = s.get("score", 0.0)
+            label = s.get("label", "Neutral")
+            n     = s.get("n_articles", 0)
+            stocks = s.get("stocks", [])
+            error  = s.get("error")
+
+            if label == "Bullish":
+                icon, color, bg = "🟢", "#22c55e", "rgba(34,197,94,0.08)"
+            elif label == "Bearish":
+                icon, color, bg = "🔴", "#ef4444", "rgba(239,68,68,0.08)"
+            else:
+                icon, color, bg = "⚪", "#9ca3af", "rgba(156,163,175,0.08)"
+
+            with col:
+                if error and not stocks:
+                    st.markdown(f"""
+                    <div style="background:{bg};border:1px solid {color}33;border-radius:8px;
+                                padding:0.7rem;text-align:center;">
+                        <div style="font-size:0.75rem;color:#9ca3af">{mkt}</div>
+                        <div style="color:#6b7280;font-size:0.78rem;margin-top:0.3rem">Unavailable</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    stock_detail = " · ".join(
+                        f"{s['ticker']} {s['score']:+.2f}" for s in stocks
+                    ) if stocks else ""
+                    st.markdown(f"""
+                    <div style="background:{bg};border:1px solid {color}55;border-radius:8px;
+                                padding:0.7rem 0.8rem;text-align:center;">
+                        <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:0.2rem">{mkt}</div>
+                        <div style="font-size:1.5rem">{icon}</div>
+                        <div style="font-family:'DM Mono',monospace;font-size:1rem;
+                                    color:{color};font-weight:500">{label}</div>
+                        <div style="font-family:'DM Mono',monospace;font-size:0.9rem;
+                                    color:{color}">{score:+.3f}</div>
+                        <div style="font-size:0.72rem;color:#6b7280;margin-top:0.3rem">
+                            {n} articles
+                        </div>
+                        <div style="font-size:0.68rem;color:#4b5563;margin-top:0.15rem">
+                            {stock_detail}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+    else:
+        st.info("Market sentiment unavailable — FinBERT is loading or RSS feeds are down.")
 
     st.divider()
 
@@ -668,6 +737,26 @@ else:
                     st.markdown(f"**{pub}** · {row['source']} · score: `{score:+.3f}`{link}")
         st.markdown("<br>", unsafe_allow_html=True)
 
+    # ── Log prediction to Supabase (silently, non-blocking) ───────────────────
+    try:
+        from src.feedback_logger import FeedbackLogger
+        from datetime import date as _date
+        _fb = FeedbackLogger()
+        _today = _date.today().isoformat()
+        _sent  = float(daily["mean_score"].iloc[-1]) if not daily.empty else 0.0
+        _fb.log_prediction(
+            ticker=full_ticker, trade_date=_today,
+            predicted=signal, confidence=confidence, sentiment=_sent,
+        )
+        # Also update yesterday's actual if we have price data
+        if len(stock_df) >= 2:
+            _yesterday = stock_df.iloc[-2]
+            _actual    = int(_yesterday.get("direction", 0))
+            _ydate     = str(stock_df.iloc[-2]["date"])
+            _fb.update_actual(ticker=full_ticker, trade_date=_ydate, actual=_actual)
+    except Exception:
+        pass  # Supabase not configured — continue without logging
+
     # ── Signal + metrics ───────────────────────────────────────────────────────
     signal_config = {
          1: ("BUY",  "signal-buy",  "🟢", "#16a34a"),
@@ -708,8 +797,8 @@ else:
     st.divider()
 
     # ── Analysis tabs ──────────────────────────────────────────────────────────
-    atab1, atab2, atab3, atab4 = st.tabs([
-        "📈 Price vs Sentiment", "💼 Backtest", "🧠 Model", "📰 Headlines",
+    atab1, atab2, atab3, atab4, atab5 = st.tabs([
+        "📈 Price vs Sentiment", "💼 Backtest", "🧠 Model", "📰 Headlines", "🔁 Performance & Retrain",
     ])
 
     with atab1:
@@ -828,3 +917,142 @@ else:
                 with st.expander(label, expanded=False):
                     link = f"\n\n🔗 [Read full article]({url})" if url != "#" else ""
                     st.markdown(f"**{pub}** · {row['source']} · score: `{score:+.3f}`{link}")
+
+    # ── Tab 5: Performance & Retrain ───────────────────────────────────────────
+    with atab5:
+        st.markdown("#### 🔁 Model performance & feedback loop")
+        st.caption(
+            "Predictions are logged to Supabase automatically. "
+            "As actual prices arrive, accuracy is computed and stored. "
+            "Use the Retrain button to incorporate new feedback into the model."
+        )
+
+        # ── Supabase setup check ───────────────────────────────────────────────
+        supabase_ok = False
+        try:
+            from src.feedback_logger import FeedbackLogger
+            fb = FeedbackLogger()
+            supabase_ok = True
+        except Exception as e:
+            st.warning(
+                f"⚠️ Supabase not configured — feedback logging is disabled.\n\n"
+                f"To enable: add `[supabase]` credentials to your Streamlit secrets.\n\n"
+                f"Error: `{e}`"
+            )
+
+        if supabase_ok:
+            # ── Performance metrics ────────────────────────────────────────────
+            perf_df = fb.get_performance(ticker=full_ticker, days_back=90)
+
+            if perf_df.empty:
+                st.info(
+                    "No feedback data yet for this ticker. "
+                    "Predictions are being logged — check back after the next trading day "
+                    "when actual prices arrive."
+                )
+            else:
+                # Summary stats
+                total    = len(perf_df)
+                accuracy = perf_df["correct"].mean() * 100
+                avg_conf = perf_df["confidence"].mean()
+
+                p1, p2, p3 = st.columns(3)
+                p1.metric("Predictions logged",  total)
+                p2.metric("Live accuracy",        f"{accuracy:.1f}%")
+                p3.metric("Avg confidence",       f"{avg_conf:.1%}")
+
+                # Accuracy over time chart
+                daily_acc = (
+                    perf_df.groupby("trade_date")["correct"]
+                    .mean()
+                    .reset_index()
+                    .rename(columns={"correct": "accuracy"})
+                )
+                daily_acc["accuracy"] *= 100
+
+                fig_acc = go.Figure()
+                fig_acc.add_trace(go.Scatter(
+                    x=daily_acc["trade_date"], y=daily_acc["accuracy"],
+                    mode="lines+markers",
+                    name="Daily accuracy",
+                    line=dict(color="#2563eb", width=2),
+                    hovertemplate="%{y:.1f}%<extra></extra>",
+                ))
+                fig_acc.add_hline(
+                    y=50, line_dash="dash", line_color="#6b7280",
+                    annotation_text="Random baseline (50%)",
+                    annotation_position="bottom right",
+                )
+                fig_acc.update_layout(
+                    height=280,
+                    title="Prediction accuracy over time",
+                    paper_bgcolor="#0f1117", plot_bgcolor="#0f1117",
+                    font=dict(color="#e5e7eb"),
+                    yaxis=dict(range=[0, 100], gridcolor="#1e2130", ticksuffix="%"),
+                    xaxis=dict(gridcolor="#1e2130"),
+                    margin=dict(l=0, r=0, t=40, b=0),
+                )
+                st.plotly_chart(fig_acc, use_container_width=True)
+
+                # Prediction history table
+                st.markdown("#### Recent predictions")
+                display_perf = perf_df[["trade_date","predicted","actual","correct","confidence","sentiment"]].copy()
+                display_perf["trade_date"] = display_perf["trade_date"].dt.strftime("%Y-%m-%d")
+                display_perf["predicted"]  = display_perf["predicted"].map({1:"▲ UP", -1:"▼ DOWN"})
+                display_perf["actual"]     = display_perf["actual"].map({1:"▲ UP", -1:"▼ DOWN"})
+                display_perf["correct"]    = display_perf["correct"].map({True:"✓", False:"✗"})
+                display_perf["confidence"] = display_perf["confidence"].apply(lambda x: f"{x:.1%}")
+                display_perf["sentiment"]  = display_perf["sentiment"].apply(lambda x: f"{x:+.3f}")
+                st.dataframe(display_perf.head(20), hide_index=True, use_container_width=True)
+
+            st.divider()
+
+            # ── Retrain section ────────────────────────────────────────────────
+            st.markdown("#### Retrain model with feedback")
+
+            from src.retrainer import Retrainer
+            retrainer = Retrainer()
+            should, reason = retrainer.should_retrain(full_ticker)
+
+            if should:
+                st.success(f"✅ {reason}")
+            else:
+                st.info(f"ℹ️ {reason}")
+
+            col_btn, col_info = st.columns([1, 3])
+            with col_btn:
+                do_retrain = st.button(
+                    "🔁 Retrain now",
+                    type="primary" if should else "secondary",
+                    use_container_width=True,
+                    key=f"retrain_{full_ticker}",
+                )
+            with col_info:
+                st.caption(
+                    "Retrains the Random Forest on the full current dataset, "
+                    "marks incorporated feedback rows as retrained, "
+                    "and cleans up rows older than 30 days."
+                )
+
+            if do_retrain:
+                with st.spinner("Retraining model…"):
+                    try:
+                        result = retrainer.run(
+                            ticker=full_ticker,
+                            features_df=data["features"],
+                            X=data["X"],
+                            y=data["X"],   # retrainer pulls y internally
+                        )
+                        if result["drift_warning"]:
+                            st.warning(result["drift_warning"])
+                        else:
+                            st.success(
+                                f"✅ Retrain complete! "
+                                f"Accuracy: {result['prev_accuracy']}% → {result['new_accuracy']}% · "
+                                f"{result['rows_incorporated']} rows incorporated · "
+                                f"{result['rows_cleaned']} old rows cleaned up."
+                            )
+                        # Clear cache so next pipeline run uses updated data
+                        st.cache_data.clear()
+                    except Exception as e:
+                        st.error(f"Retrain failed: {e}")
