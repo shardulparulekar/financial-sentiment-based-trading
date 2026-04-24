@@ -1,40 +1,47 @@
 """
 feedback_logger.py
 ------------------
-Logs model predictions and actual outcomes to Supabase (free Postgres).
+Logs model predictions to Supabase with smart update logic.
 
-Robustness features:
-    - Auto cleanup on every log_prediction call
-    - Row count guard: force-deletes oldest retrained rows if table exceeds MAX_ROWS
-    - Connection test method for dashboard diagnostics
-    - All methods fail gracefully — app works without Supabase
+Design: one row per ticker per trading day.
+    - First prediction of the day → INSERT
+    - Subsequent predictions → UPDATE if new confidence is higher
+      or sentiment changed significantly (>0.05 difference)
+    - update_count tracks how many times signal changed that day
 
-Cleanup schedule:
-    - Automatic: runs after every insert (deletes retrained rows older than KEEP_DAYS)
-    - Manual: Retrain button triggers additional cleanup
-    - Guard: if total rows exceed MAX_ROWS, oldest retrained rows are force-deleted
-
-SQL to run in Supabase SQL Editor (one-time):
+Schema (run in Supabase SQL Editor):
+--------------------------------------
     CREATE TABLE predictions (
-        id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-        created_at  timestamptz DEFAULT now(),
-        ticker      text NOT NULL,
-        trade_date  date NOT NULL,
-        predicted   int,
-        actual      int,
-        correct     boolean,
-        confidence  float,
-        sentiment   float,
-        retrained   boolean DEFAULT false
+        id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        created_at   timestamptz DEFAULT now(),
+        updated_at   timestamptz DEFAULT now(),
+        update_count int DEFAULT 1,
+        ticker       text NOT NULL,
+        trade_date   date NOT NULL,
+        predicted    int,
+        actual       int,
+        correct      boolean,
+        confidence   float,
+        sentiment    float,
+        retrained    boolean DEFAULT false
     );
-    CREATE INDEX idx_predictions_ticker    ON predictions(ticker);
+    CREATE UNIQUE INDEX idx_predictions_unique ON predictions(ticker, trade_date);
     CREATE INDEX idx_predictions_retrained ON predictions(retrained);
     CREATE INDEX idx_predictions_date      ON predictions(trade_date);
+
     ALTER TABLE predictions ENABLE ROW LEVEL SECURITY;
     CREATE POLICY "app_select" ON predictions FOR SELECT TO anon USING (true);
     CREATE POLICY "app_insert" ON predictions FOR INSERT TO anon WITH CHECK (true);
     CREATE POLICY "app_update" ON predictions FOR UPDATE TO anon USING (true);
     CREATE POLICY "app_delete" ON predictions FOR DELETE TO anon USING (retrained = true);
+
+    -- Daily cleanup via pg_cron (run this once to enable):
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    SELECT cron.schedule(
+        'daily-cleanup',
+        '0 2 * * *',  -- 2am UTC daily (before most markets open)
+        $$DELETE FROM predictions WHERE retrained = true AND created_at < NOW() - INTERVAL '30 days'$$
+    );
 
 Streamlit secrets:
     [supabase]
@@ -50,9 +57,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-MAX_ROWS   = 10_000
-KEEP_DAYS  = 30
-AUTO_CLEAN = True
+MAX_ROWS              = 10_000
+KEEP_DAYS             = 30
+AUTO_CLEAN            = True
+MIN_CONFIDENCE_DELTA  = 0.02   # update if new confidence is this much higher
+MIN_SENTIMENT_DELTA   = 0.05   # update if sentiment shifted by this much
 
 
 def _get_client():
@@ -85,7 +94,7 @@ class FeedbackLogger:
     # ── Connection test ────────────────────────────────────────────────────────
 
     def test_connection(self) -> tuple:
-        """Test Supabase connection. Returns (ok: bool, message: str)."""
+        """Returns (ok: bool, message: str)."""
         try:
             client = _get_client()
             result = client.table(self.TABLE).select("id", count="exact").limit(1).execute()
@@ -99,43 +108,87 @@ class FeedbackLogger:
     # ── Write ──────────────────────────────────────────────────────────────────
 
     def log_prediction(self, ticker, trade_date, predicted, confidence, sentiment) -> bool:
-        """Log a new prediction. Also triggers auto cleanup."""
+        """
+        Log or update a prediction for ticker+date.
+
+        Logic:
+            - No existing row → INSERT
+            - Existing row + new confidence higher by MIN_CONFIDENCE_DELTA → UPDATE
+            - Existing row + sentiment shifted by MIN_SENTIMENT_DELTA → UPDATE
+            - Otherwise → skip (existing prediction is better or same)
+        """
         try:
             client = _get_client()
 
-            # Duplicate guard
-            existing = (
-                client.table(self.TABLE)
-                .select("id")
-                .eq("ticker", ticker.upper())
-                .eq("trade_date", trade_date)
-                .execute()
-            )
-            if existing.data:
-                logger.info(f"Already logged: {ticker} {trade_date}")
-                return True
-
-            # Row count guard
+            # ── Row count guard ────────────────────────────────────────────────
             try:
-                count_result = client.table(self.TABLE).select("id", count="exact").limit(1).execute()
-                total = count_result.count if hasattr(count_result, "count") else 0
+                count_r = client.table(self.TABLE).select("id", count="exact").limit(1).execute()
+                total   = count_r.count if hasattr(count_r, "count") else 0
                 if total and total >= MAX_ROWS:
-                    logger.warning(f"Row limit reached ({total}) — force cleaning 500 rows.")
+                    logger.warning(f"Row limit ({total}/{MAX_ROWS}) — force cleaning.")
                     self._force_cleanup(client, n=500)
             except Exception:
                 pass
 
-            # Insert
-            client.table(self.TABLE).insert({
-                "ticker":     ticker.upper(),
-                "trade_date": trade_date,
-                "predicted":  int(predicted),
-                "confidence": round(float(confidence), 4),
-                "sentiment":  round(float(sentiment), 4),
-                "retrained":  False,
-            }).execute()
+            # ── Check for existing row ─────────────────────────────────────────
+            existing = (
+                client.table(self.TABLE)
+                .select("id,predicted,confidence,sentiment,update_count")
+                .eq("ticker", ticker.upper())
+                .eq("trade_date", trade_date)
+                .execute()
+            )
 
-            logger.info(f"Logged: {ticker} {trade_date} → {'UP' if predicted==1 else 'DOWN'} (conf={confidence:.1%})")
+            if existing.data:
+                row         = existing.data[0]
+                old_conf    = float(row.get("confidence") or 0)
+                old_sent    = float(row.get("sentiment")  or 0)
+                old_count   = int(row.get("update_count") or 1)
+
+                conf_delta  = float(confidence) - old_conf
+                sent_delta  = abs(float(sentiment) - old_sent)
+                should_update = (
+                    conf_delta  >= MIN_CONFIDENCE_DELTA or
+                    sent_delta  >= MIN_SENTIMENT_DELTA
+                )
+
+                if should_update:
+                    client.table(self.TABLE).update({
+                        "predicted":    int(predicted),
+                        "confidence":   round(float(confidence), 4),
+                        "sentiment":    round(float(sentiment),  4),
+                        "updated_at":   datetime.utcnow().isoformat(),
+                        "update_count": old_count + 1,
+                    }).eq("id", row["id"]).execute()
+                    logger.info(
+                        f"Updated: {ticker} {trade_date} "
+                        f"conf {old_conf:.2f}→{confidence:.2f} "
+                        f"sent {old_sent:+.3f}→{sentiment:+.3f} "
+                        f"(update #{old_count + 1})"
+                    )
+                else:
+                    logger.info(
+                        f"Skipped update: {ticker} {trade_date} — "
+                        f"existing prediction is equally or more confident "
+                        f"(conf delta={conf_delta:+.3f}, sent delta={sent_delta:.3f})"
+                    )
+                return True
+
+            # ── Insert new row ─────────────────────────────────────────────────
+            client.table(self.TABLE).insert({
+                "ticker":       ticker.upper(),
+                "trade_date":   trade_date,
+                "predicted":    int(predicted),
+                "confidence":   round(float(confidence), 4),
+                "sentiment":    round(float(sentiment),  4),
+                "update_count": 1,
+                "retrained":    False,
+            }).execute()
+            logger.info(
+                f"Inserted: {ticker} {trade_date} → "
+                f"{'UP' if predicted==1 else 'DOWN'} "
+                f"(conf={confidence:.1%}, sent={sentiment:+.3f})"
+            )
 
             if AUTO_CLEAN:
                 self._auto_cleanup(client)
@@ -145,16 +198,16 @@ class FeedbackLogger:
         except EnvironmentError:
             return False
         except Exception as e:
-            logger.warning(f"Could not log prediction for {ticker}: {e}")
+            logger.warning(f"log_prediction failed for {ticker}: {e}")
             return False
 
     def update_actual(self, ticker, trade_date, actual) -> bool:
-        """Update a prediction with the actual next-day outcome."""
+        """Fill in the actual outcome once next-day price data arrives."""
         if actual == 0:
             return True
         try:
             client = _get_client()
-            rows = (
+            rows   = (
                 client.table(self.TABLE)
                 .select("id,predicted")
                 .eq("ticker", ticker.upper())
@@ -162,7 +215,6 @@ class FeedbackLogger:
                 .execute()
             )
             if not rows.data:
-                logger.debug(f"No row for {ticker} {trade_date}")
                 return False
             row     = rows.data[0]
             correct = int(row["predicted"]) == int(actual)
@@ -170,24 +222,24 @@ class FeedbackLogger:
                 "actual":  int(actual),
                 "correct": correct,
             }).eq("id", row["id"]).execute()
-            logger.info(f"Updated actual {ticker} {trade_date}: {'correct' if correct else 'wrong'}")
+            logger.info(f"Actual updated: {ticker} {trade_date} → {'correct' if correct else 'wrong'}")
             return True
         except EnvironmentError:
             return False
         except Exception as e:
-            logger.warning(f"update_actual failed for {ticker}: {e}")
+            logger.warning(f"update_actual failed: {e}")
             return False
 
     # ── Read ───────────────────────────────────────────────────────────────────
 
     def get_performance(self, ticker=None, days_back=90) -> pd.DataFrame:
-        """Fetch completed predictions (those with known actuals)."""
+        """Completed predictions (with known actuals)."""
         try:
             client = _get_client()
             cutoff = (datetime.utcnow() - timedelta(days=days_back)).date().isoformat()
             query  = (
                 client.table(self.TABLE)
-                .select("trade_date,ticker,predicted,actual,correct,confidence,sentiment")
+                .select("trade_date,ticker,predicted,actual,correct,confidence,sentiment,update_count,updated_at")
                 .gte("trade_date", cutoff)
                 .not_.is_("actual", "null")
                 .order("trade_date", desc=True)
@@ -224,7 +276,7 @@ class FeedbackLogger:
             return pd.DataFrame()
 
     def table_stats(self) -> dict:
-        """Return row counts for dashboard health display."""
+        """Row counts for dashboard health display."""
         try:
             client    = _get_client()
             total     = client.table(self.TABLE).select("id", count="exact").limit(1).execute()
@@ -254,7 +306,6 @@ class FeedbackLogger:
             return False
 
     def cleanup_old(self, keep_days=KEEP_DAYS) -> int:
-        """Manual cleanup — called after retraining."""
         try:
             client  = _get_client()
             deleted = self._auto_cleanup(client, keep_days=keep_days)
@@ -270,8 +321,14 @@ class FeedbackLogger:
             return {}
         by_ticker = (
             df.groupby("ticker")
-            .agg(predictions=("correct","count"), accuracy=("correct", lambda x: round(x.mean()*100,1)), avg_confidence=("confidence","mean"))
-            .reset_index().sort_values("predictions", ascending=False)
+            .agg(
+                predictions=("correct", "count"),
+                accuracy=("correct", lambda x: round(x.mean()*100, 1)),
+                avg_confidence=("confidence", "mean"),
+                avg_updates=("update_count", "mean"),
+            )
+            .reset_index()
+            .sort_values("predictions", ascending=False)
         )
         return {
             "total_predictions": len(df),
@@ -285,7 +342,6 @@ class FeedbackLogger:
 
     @staticmethod
     def _auto_cleanup(client, keep_days=KEEP_DAYS) -> int:
-        """Delete retrained rows older than keep_days. Runs after every insert."""
         try:
             cutoff = (datetime.utcnow() - timedelta(days=keep_days)).isoformat()
             result = (
@@ -297,7 +353,7 @@ class FeedbackLogger:
             )
             deleted = len(result.data) if result.data else 0
             if deleted:
-                logger.info(f"Auto-cleanup: deleted {deleted} rows older than {keep_days} days.")
+                logger.info(f"Auto-cleanup: deleted {deleted} rows.")
             return deleted
         except Exception as e:
             logger.debug(f"Auto-cleanup skipped: {e}")
@@ -305,7 +361,6 @@ class FeedbackLogger:
 
     @staticmethod
     def _force_cleanup(client, n=500) -> int:
-        """Emergency cleanup when row count exceeds MAX_ROWS."""
         try:
             oldest = (
                 client.table(FeedbackLogger.TABLE)
@@ -316,7 +371,7 @@ class FeedbackLogger:
                 .execute()
             )
             if not oldest.data:
-                logger.warning("Force cleanup: no retrained rows to delete.")
+                logger.warning("Force cleanup: no retrained rows available.")
                 return 0
             ids    = [r["id"] for r in oldest.data]
             result = client.table(FeedbackLogger.TABLE).delete().in_("id", ids).execute()
