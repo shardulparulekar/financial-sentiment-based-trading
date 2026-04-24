@@ -941,6 +941,24 @@ else:
             )
 
         if supabase_ok:
+            # ── Connection status + table health ───────────────────────────────
+            ok, msg = fb.test_connection()
+            if ok:
+                st.success(f"🟢 {msg}")
+                stats = fb.table_stats()
+                if stats:
+                    s1, s2, s3, s4 = st.columns(4)
+                    s1.metric("Total rows",    stats.get("total", 0))
+                    s2.metric("Pending actuals", stats.get("pending", 0))
+                    s3.metric("Retrained rows", stats.get("retrained", 0))
+                    s4.metric("Row limit",      f"{stats.get('max_rows',0):,}")
+                    if stats.get("total", 0) > stats.get("max_rows", 10000) * 0.8:
+                        st.warning("⚠️ Table is 80%+ full — cleanup will run automatically on next prediction.")
+            else:
+                st.error(f"🔴 {msg}")
+
+            st.markdown("---")
+
             # ── Performance metrics ────────────────────────────────────────────
             perf_df = fb.get_performance(ticker=full_ticker, days_back=90)
 
