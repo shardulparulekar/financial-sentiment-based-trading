@@ -14,10 +14,9 @@ Or for specific tickers:
 import os
 import sys
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
-# Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -26,10 +25,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger("daily_retrain")
-
-# ── Tickers to retrain ─────────────────────────────────────────────────────────
-# Default: representative set across all markets.
-# Override via TICKERS_OVERRIDE env var (comma-separated).
 
 DEFAULT_TICKERS = [
     # USA
@@ -55,18 +50,121 @@ def get_tickers() -> list[str]:
     return DEFAULT_TICKERS
 
 
-def update_actuals(fb, ticker: str, stock_df) -> None:
+def fill_missing_actuals(fb) -> int:
     """
-    Fill in actual outcomes for yesterday's prediction.
-    Called first so today's retraining has the freshest labels.
+    Key fix: scan ALL pending rows in Supabase (actual IS NULL) and
+    fill in actuals using fresh yfinance data, regardless of whether
+    the user has visited the dashboard.
+
+    This runs BEFORE any retraining, ensuring every row that can be
+    resolved is resolved before the retrain query filters on actual IS NOT NULL.
+
+    Returns: number of rows updated.
     """
-    if len(stock_df) < 2:
-        return
-    yesterday      = stock_df.iloc[-2]
-    yesterday_date = str(yesterday["date"])
-    actual         = int(yesterday.get("direction", 0))
-    if actual != 0:
-        fb.update_actual(ticker=ticker, trade_date=yesterday_date, actual=actual)
+    import yfinance as yf
+    import pandas as pd
+
+    logger.info("Filling missing actuals from yfinance...")
+
+    try:
+        # Get all rows with null actuals
+        from supabase import create_client
+        client = _get_supabase()
+        pending = (
+            client.table("predictions")
+            .select("id,ticker,trade_date,predicted")
+            .is_("actual", "null")
+            .execute()
+        )
+
+        if not pending.data:
+            logger.info("No pending actuals to fill.")
+            return 0
+
+        # Group by ticker to minimise yfinance calls
+        from collections import defaultdict
+        by_ticker = defaultdict(list)
+        for row in pending.data:
+            by_ticker[row["ticker"]].append(row)
+
+        updated = 0
+        for ticker, rows in by_ticker.items():
+            try:
+                # Fetch last 10 days of price data for this ticker
+                df = yf.download(
+                    ticker,
+                    start=(datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%d"),
+                    end=datetime.utcnow().strftime("%Y-%m-%d"),
+                    progress=False,
+                    auto_adjust=True,
+                )
+                if df.empty:
+                    continue
+
+                # Flatten MultiIndex if present
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+
+                df["date"]         = pd.to_datetime(df.index).date
+                df["daily_return"] = df["Close"].pct_change() * 100
+                df["direction"]    = df["daily_return"].apply(
+                    lambda r: 1 if r > 0.1 else (-1 if r < -0.1 else 0)
+                )
+
+                # Build a date → direction lookup
+                price_map = {str(row["date"]): int(row["direction"])
+                             for _, row in df.iterrows()
+                             if not pd.isna(row["direction"])}
+
+                for pred_row in rows:
+                    td = pred_row["trade_date"]
+
+                    # We need the return on trade_date+1
+                    # (prediction is made on T, outcome is T+1's return)
+                    trade_dt    = datetime.strptime(td, "%Y-%m-%d").date()
+                    next_day    = trade_dt + timedelta(days=1)
+
+                    # Walk forward to find the next trading day with data
+                    actual = None
+                    for offset in range(5):   # look up to 5 days ahead (weekends/holidays)
+                        check = str(next_day + timedelta(days=offset))
+                        if check in price_map:
+                            actual = price_map[check]
+                            break
+
+                    if actual is not None and actual != 0:
+                        correct = int(pred_row["predicted"]) == actual
+                        client.table("predictions").update({
+                            "actual":  actual,
+                            "correct": correct,
+                        }).eq("id", pred_row["id"]).execute()
+                        updated += 1
+                        logger.info(
+                            f"  Filled actual: {ticker} {td} → "
+                            f"{'correct' if correct else 'wrong'} "
+                            f"(predicted={pred_row['predicted']}, actual={actual})"
+                        )
+
+            except Exception as e:
+                logger.warning(f"  Could not fill actuals for {ticker}: {e}")
+                continue
+
+        logger.info(f"Filled {updated} missing actuals.")
+        return updated
+
+    except Exception as e:
+        logger.error(f"fill_missing_actuals failed: {e}")
+        return 0
+
+
+def _get_supabase():
+    """Get Supabase client directly (without Streamlit secrets)."""
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_KEY", "")
+    if not url or not key:
+        raise EnvironmentError("SUPABASE_URL and SUPABASE_KEY must be set.")
+    from supabase import create_client
+    return create_client(url, key)
 
 
 def retrain_ticker(ticker: str, fb) -> dict:
@@ -75,7 +173,6 @@ def retrain_ticker(ticker: str, fb) -> dict:
     from src.sentiment_model import SentimentPipeline
     from src.feature_engineering import FeatureEngineer
     from src.prediction import PredictionModel
-    from src.backtesting import Backtester
 
     logger.info(f"── {ticker} ──────────────────────────────────")
 
@@ -85,13 +182,11 @@ def retrain_ticker(ticker: str, fb) -> dict:
         if stock_df.empty:
             return {"ticker": ticker, "status": "error", "reason": "No stock data"}
 
-        # Update yesterday's actual before retraining
-        update_actuals(fb, ticker, stock_df)
-
         # Score sentiment
+        import pandas as pd
         pipe   = SentimentPipeline()
-        scored = pipe.score(news_df) if not news_df.empty else __import__("pandas").DataFrame()
-        daily  = pipe.aggregate_daily(scored) if not scored.empty else __import__("pandas").DataFrame()
+        scored = pipe.score(news_df) if not news_df.empty else pd.DataFrame()
+        daily  = pipe.aggregate_daily(scored) if not scored.empty else pd.DataFrame()
 
         # Build features
         fe       = FeatureEngineer()
@@ -109,8 +204,7 @@ def retrain_ticker(ticker: str, fb) -> dict:
         # Log today's prediction
         X_latest   = X.iloc[[-1]]
         signal     = int(model.predict(X_latest)[0])
-        proba      = model.predict_proba(X_latest)[0]
-        confidence = float(max(proba))
+        confidence = float(max(model.predict_proba(X_latest)[0]))
         sentiment  = float(daily["mean_score"].iloc[-1]) if not daily.empty else 0.0
         trade_date = str(stock_df.iloc[-1]["date"])
 
@@ -125,6 +219,7 @@ def retrain_ticker(ticker: str, fb) -> dict:
             ticker_rows = unretrained[unretrained["ticker"] == ticker.upper()]
             if not ticker_rows.empty and "id" in ticker_rows.columns:
                 fb.mark_retrained(ticker_rows["id"].tolist())
+                logger.info(f"  Marked {len(ticker_rows)} rows as retrained.")
 
         signal_str = "BUY" if signal == 1 else ("SELL" if signal == -1 else "HOLD")
         logger.info(
@@ -148,25 +243,32 @@ def retrain_ticker(ticker: str, fb) -> dict:
 def main():
     logger.info(f"Daily retrain started at {datetime.utcnow().isoformat()}Z")
 
-    # Test Supabase connection first
     from src.feedback_logger import FeedbackLogger
     fb = FeedbackLogger()
+
+    # Test connection
     ok, msg = fb.test_connection()
     if not ok:
         logger.error(f"Supabase connection failed: {msg}")
-        logger.error("Set SUPABASE_URL and SUPABASE_KEY environment variables.")
         sys.exit(1)
     logger.info(f"Supabase: {msg}")
 
+    # ── STEP 1: Fill all missing actuals first ─────────────────────────────────
+    # This is the critical step that was missing before.
+    # Resolves all NULL actuals using yfinance before retraining begins,
+    # so get_unretrained() finds rows to work with.
+    filled = fill_missing_actuals(fb)
+    logger.info(f"Step 1 complete: filled {filled} actuals.")
+
+    # ── STEP 2: Retrain all tickers ────────────────────────────────────────────
     tickers = get_tickers()
     results = []
-
     for ticker in tickers:
         result = retrain_ticker(ticker, fb)
         results.append(result)
 
-    # ── Cleanup ────────────────────────────────────────────────────────────────
-    logger.info("Running cleanup...")
+    # ── STEP 3: Cleanup ────────────────────────────────────────────────────────
+    logger.info("Step 3: Running cleanup...")
     deleted = fb.cleanup_old(keep_days=30)
     logger.info(f"Cleanup complete: {deleted} rows deleted.")
 
@@ -177,10 +279,11 @@ def main():
 
     logger.info("")
     logger.info("── Daily retrain summary ─────────────────────────────────")
-    logger.info(f"  Completed : {ok_count}/{len(tickers)}")
-    logger.info(f"  Errors    : {err_count}")
-    logger.info(f"  Skipped   : {skipped}")
-    logger.info(f"  Rows cleaned: {deleted}")
+    logger.info(f"  Actuals filled : {filled}")
+    logger.info(f"  Retrained      : {ok_count}/{len(tickers)}")
+    logger.info(f"  Errors         : {err_count}")
+    logger.info(f"  Skipped        : {skipped}")
+    logger.info(f"  Rows cleaned   : {deleted}")
     logger.info("")
 
     for r in results:
@@ -191,9 +294,8 @@ def main():
         else:
             logger.info(f"  ⚠ {r['ticker']:15s} SKIPPED: {r.get('reason','')}")
 
-    # Exit with error code if too many failures (useful for GitHub Actions alerts)
     if err_count > len(tickers) // 2:
-        logger.error("More than half of tickers failed — exiting with error.")
+        logger.error("More than half of tickers failed.")
         sys.exit(1)
 
     logger.info("Daily retrain complete.")
