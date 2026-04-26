@@ -446,55 +446,67 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # NAV BAR + TAB PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Nav bar — static part (Streamlit strips scripts from st.markdown)
 st.markdown("""
 <div class="nav-bar">
     <span>
         <span class="nav-logo">📡 Sentiment Signal</span>
         <span class="nav-sub">FinBERT-powered global trading signals</span>
     </span>
-    <span id="user-clock" style="font-family:'DM Mono',monospace;font-size:0.82rem;
-          color:#6b7280;letter-spacing:0.01em;"></span>
+    <span style="font-family:'DM Mono',monospace;font-size:0.8rem;color:#6b7280" id="clock-placeholder">
+        &nbsp;
+    </span>
 </div>
+""", unsafe_allow_html=True)
 
+# Clock — must use st.components.v1.html because Streamlit strips <script> from st.markdown
+import streamlit.components.v1 as components
+components.html("""
+<style>
+  body { margin:0; padding:0; background:transparent; }
+  #clock {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    color: #6b7280;
+    letter-spacing: 0.01em;
+    position: fixed;
+    top: 14px;
+    right: 80px;
+    z-index: 9999;
+    background: transparent;
+  }
+</style>
+<div id="clock">Loading…</div>
 <script>
 (function() {
+    var days   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    var months = ["Jan","Feb","Mar","Apr","May","Jun",
+                  "Jul","Aug","Sep","Oct","Nov","Dec"];
+
     function updateClock() {
-        var el = document.getElementById("user-clock");
+        var el = document.getElementById("clock");
         if (!el) return;
-
-        var now = new Date();
-
-        // Day name, date
-        var days  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        var months = ["Jan","Feb","Mar","Apr","May","Jun",
-                      "Jul","Aug","Sep","Oct","Nov","Dec"];
+        var now   = new Date();
         var day   = days[now.getDay()];
         var date  = now.getDate();
         var month = months[now.getMonth()];
-
-        // Time
-        var hh = String(now.getHours()).padStart(2,"0");
-        var mm = String(now.getMinutes()).padStart(2,"0");
-
-        // Timezone abbreviation — extracted from Intl API
-        var tzName = "";
+        var hh    = String(now.getHours()).padStart(2, "0");
+        var mm    = String(now.getMinutes()).padStart(2, "0");
+        var tz    = "Local";
         try {
-            tzName = new Intl.DateTimeFormat("en", {timeZoneName:"short"})
-                         .formatToParts(now)
-                         .find(p => p.type === "timeZoneName").value;
-        } catch(e) {
-            tzName = "Local";
-        }
-
-        el.textContent = "🕐 " + day + " " + date + " " + month
-                       + "  " + hh + ":" + mm + " " + tzName;
+            tz = new Intl.DateTimeFormat("en", { timeZoneName: "short" })
+                     .formatToParts(now)
+                     .find(function(p) { return p.type === "timeZoneName"; }).value;
+        } catch(e) {}
+        el.textContent = "\uD83D\uDD50 " + day + " " + date + " " + month
+                       + "  " + hh + ":" + mm + " " + tz;
     }
 
     updateClock();
-    setInterval(updateClock, 1000);   // tick every second
+    setInterval(updateClock, 1000);
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0, scrolling=False)
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
