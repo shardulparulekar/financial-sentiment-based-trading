@@ -459,54 +459,48 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Clock — must use st.components.v1.html because Streamlit strips <script> from st.markdown
+# Clock — uses st.components.v1.html (st.markdown strips scripts)
 import streamlit.components.v1 as components
-components.html("""
-<style>
-  body { margin:0; padding:0; background:transparent; }
-  #clock {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.82rem;
-    color: #6b7280;
-    letter-spacing: 0.01em;
-    position: fixed;
-    top: 14px;
-    right: 80px;
-    z-index: 9999;
-    background: transparent;
-  }
-</style>
-<div id="clock">Loading…</div>
-<script>
-(function() {
-    var days   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    var months = ["Jan","Feb","Mar","Apr","May","Jun",
-                  "Jul","Aug","Sep","Oct","Nov","Dec"];
-
-    function updateClock() {
-        var el = document.getElementById("clock");
-        if (!el) return;
-        var now   = new Date();
-        var day   = days[now.getDay()];
-        var date  = now.getDate();
-        var month = months[now.getMonth()];
-        var hh    = String(now.getHours()).padStart(2, "0");
-        var mm    = String(now.getMinutes()).padStart(2, "0");
-        var tz    = "Local";
-        try {
-            tz = new Intl.DateTimeFormat("en", { timeZoneName: "short" })
-                     .formatToParts(now)
-                     .find(function(p) { return p.type === "timeZoneName"; }).value;
-        } catch(e) {}
-        el.textContent = "\uD83D\uDD50 " + day + " " + date + " " + month
-                       + "  " + hh + ":" + mm + " " + tz;
-    }
-
-    updateClock();
-    setInterval(updateClock, 1000);
-})();
-</script>
-""", height=0, scrolling=False)
+clock_html = (
+    "<style>"
+    "body{margin:0;padding:0;background:transparent;}"
+    "#clock{"
+    "font-family:'DM Mono',monospace;"
+    "font-size:0.82rem;"
+    "color:#6b7280;"
+    "letter-spacing:0.01em;"
+    "position:fixed;"
+    "top:14px;"
+    "right:80px;"
+    "z-index:9999;"
+    "background:transparent;"
+    "}"
+    "</style>"
+    "<div id='clock'>--</div>"
+    "<script>"
+    "(function(){"
+    "var D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];"
+    "var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
+    "function tick(){"
+    "var el=document.getElementById('clock');"
+    "if(!el)return;"
+    "var n=new Date();"
+    "var hh=String(n.getHours()).padStart(2,'0');"
+    "var mm=String(n.getMinutes()).padStart(2,'0');"
+    "var tz='Local';"
+    "try{tz=new Intl.DateTimeFormat('en',{timeZoneName:'short'})"
+    ".formatToParts(n).find(function(p){return p.type==='timeZoneName';}).value;}catch(e){}"
+    "el.textContent='[clock] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
+    "+'  '+hh+':'+mm+' '+tz;"
+    "}"
+    "tick();"
+    "setInterval(tick,1000);"
+    "})();"
+    "</script>"
+)
+# Replace [clock] placeholder with the actual clock emoji (avoids unicode issues)
+clock_html = clock_html.replace("[clock]", "🕐")
+components.html(clock_html, height=0, scrolling=False)
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
