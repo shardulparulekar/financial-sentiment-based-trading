@@ -124,6 +124,77 @@ WORLD_INDICES = [
     {"name": "DAX",        "ticker": "^GDAXI", "symbol": "€",   "region": "🇩🇪"},
 ]
 
+# Market hours per index — (open_hour, close_hour) in local time, timezone string
+MARKET_HOURS = {
+    "^GSPC":  {"tz": "America/New_York",  "open": (9,  30), "close": (16, 0),  "label": "ET"},
+    "^FTSE":  {"tz": "Europe/London",     "open": (8,  0),  "close": (16, 30), "label": "BST/GMT"},
+    "^N225":  {"tz": "Asia/Tokyo",        "open": (9,  0),  "close": (15, 30), "label": "JST"},
+    "^BSESN": {"tz": "Asia/Kolkata",      "open": (9,  15), "close": (15, 30), "label": "IST"},
+    "^GDAXI": {"tz": "Europe/Berlin",     "open": (9,  0),  "close": (17, 30), "label": "CET/CEST"},
+}
+
+
+def get_market_open_status(ticker: str) -> dict:
+    """
+    Return whether a market is currently open, its local time,
+    and a human-readable status string.
+    """
+    import pytz
+    hours = MARKET_HOURS.get(ticker)
+    if not hours:
+        return {"is_open": False, "local_time": "", "status": ""}
+
+    tz       = pytz.timezone(hours["tz"])
+    now_local = datetime.now(tz)
+    weekday   = now_local.weekday()   # 0=Mon, 6=Sun
+
+    oh, om = hours["open"]
+    ch, cm = hours["close"]
+
+    open_mins  = oh * 60 + om
+    close_mins = ch * 60 + cm
+    now_mins   = now_local.hour * 60 + now_local.minute
+
+    is_weekday = weekday < 5
+    in_hours   = open_mins <= now_mins < close_mins
+    is_open    = is_weekday and in_hours
+
+    local_time_str = now_local.strftime(f"%H:%M {hours['label']}")
+
+    if is_open:
+        # Time until close
+        mins_left = close_mins - now_mins
+        h_left, m_left = divmod(mins_left, 60)
+        if h_left > 0:
+            time_left = f"{h_left}h {m_left}m left"
+        else:
+            time_left = f"{m_left}m left"
+        status = f"🟢 OPEN  {local_time_str}  ({time_left})"
+    elif not is_weekday:
+        # Weekend — show next open
+        days_to_monday = 7 - weekday if weekday >= 5 else 0
+        next_open_dt   = now_local + timedelta(days=days_to_monday)
+        next_open_str  = next_open_dt.strftime(f"%a %d %b  {oh:02d}:{om:02d} {hours['label']}")
+        status = f"🔴 CLOSED  Opens {next_open_str}"
+    else:
+        # Weekday but outside hours
+        if now_mins < open_mins:
+            opens_in = open_mins - now_mins
+            h_in, m_in = divmod(opens_in, 60)
+            if h_in > 0:
+                wait = f"in {h_in}h {m_in}m"
+            else:
+                wait = f"in {m_in}m"
+            status = f"🟡 PRE-MARKET  {local_time_str}  (opens {wait})"
+        else:
+            status = f"🔴 CLOSED  {local_time_str}"
+
+    return {
+        "is_open":    is_open,
+        "local_time": local_time_str,
+        "status":     status,
+    }
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
@@ -223,6 +294,32 @@ def close_ticker_tab(full_ticker):
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED DATA LOADERS
 # ══════════════════════════════════════════════════════════════════════════════
+
+def get_market_status() -> dict:
+    """
+    Detect whether today is a weekend — markets closed.
+    Returns dict with is_weekend, next_open, note.
+    """
+    import pytz
+    today   = datetime.now(pytz.utc)
+    weekday = today.weekday()   # 0=Mon ... 6=Sun
+    is_weekend = weekday >= 5
+
+    if is_weekend:
+        days_to_monday = 7 - weekday   # Sat→2, Sun→1
+        next_open = (today + timedelta(days=days_to_monday)).strftime("%A %b %d")
+        note = (
+            "Markets are closed today. Signals are based on Friday's closing prices. "
+            f"Weekend news is included in sentiment scoring and will feed into "
+            f"Monday's signal when markets reopen ({next_open})."
+        )
+    else:
+        next_open = None
+        note = None
+
+    return {"is_weekend": is_weekend, "weekday": weekday,
+            "next_open": next_open, "note": note}
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_index_data(ticker: str) -> pd.DataFrame:
@@ -355,7 +452,48 @@ st.markdown("""
         <span class="nav-logo">📡 Sentiment Signal</span>
         <span class="nav-sub">FinBERT-powered global trading signals</span>
     </span>
+    <span id="user-clock" style="font-family:'DM Mono',monospace;font-size:0.82rem;
+          color:#6b7280;letter-spacing:0.01em;"></span>
 </div>
+
+<script>
+(function() {
+    function updateClock() {
+        var el = document.getElementById("user-clock");
+        if (!el) return;
+
+        var now = new Date();
+
+        // Day name, date
+        var days  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        var months = ["Jan","Feb","Mar","Apr","May","Jun",
+                      "Jul","Aug","Sep","Oct","Nov","Dec"];
+        var day   = days[now.getDay()];
+        var date  = now.getDate();
+        var month = months[now.getMonth()];
+
+        // Time
+        var hh = String(now.getHours()).padStart(2,"0");
+        var mm = String(now.getMinutes()).padStart(2,"0");
+
+        // Timezone abbreviation — extracted from Intl API
+        var tzName = "";
+        try {
+            tzName = new Intl.DateTimeFormat("en", {timeZoneName:"short"})
+                         .formatToParts(now)
+                         .find(p => p.type === "timeZoneName").value;
+        } catch(e) {
+            tzName = "Local";
+        }
+
+        el.textContent = "🕐 " + day + " " + date + " " + month
+                       + "  " + hh + ":" + mm + " " + tzName;
+    }
+
+    updateClock();
+    setInterval(updateClock, 1000);   // tick every second
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # Tab pills row
@@ -392,6 +530,14 @@ st.divider()
 # ══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.active_tab == "home":
+
+    # ── Weekend / market closed banner ───────────────────────────────────────
+    mkt_status = get_market_status()
+    if mkt_status["is_weekend"]:
+        st.info(
+            f"📅 **Weekend mode** — {mkt_status['note']}",
+            icon="🏖️",
+        )
 
     # ── World indices ──────────────────────────────────────────────────────────
     st.markdown("### 🌍 Global markets")
@@ -455,6 +601,7 @@ if st.session_state.active_tab == "home":
                 )
 
                 # Value + change displayed above chart
+                mkt_open = get_market_open_status(idx["ticker"])
                 st.markdown(f"""
                 <div style="padding:0.7rem 0.5rem 0.2rem">
                     <div style="font-size:0.75rem;color:#9ca3af">{idx['region']} {idx['name']}</div>
@@ -462,6 +609,9 @@ if st.session_state.active_tab == "home":
                                 color:#f9fafb;line-height:1.3">{idx['symbol']}{current:,.0f}</div>
                     <div style="font-size:0.82rem;color:{chg_color};font-weight:500">
                         {chg_sym} {abs(chg_pct):.2f}% today
+                    </div>
+                    <div style="font-size:0.72rem;color:#6b7280;margin-top:0.25rem">
+                        {mkt_open['status']}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -685,6 +835,9 @@ else:
         if exchange:
             caption_parts.append(exchange)
         caption_parts.append(f"Currency: {currency_name} ({currency_sym.strip()})")
+        _mkt = get_market_status()
+        if _mkt["is_weekend"]:
+            caption_parts.append("📅 Weekend — prices as of Friday close")
         st.caption(" · ".join(caption_parts))
     with dcol:
         days_back = st.selectbox("History", [90, 180, 365], index=2,
@@ -798,7 +951,7 @@ else:
 
     # ── Analysis tabs ──────────────────────────────────────────────────────────
     atab1, atab2, atab3, atab4, atab5 = st.tabs([
-        "📈 Price vs Sentiment", "💼 Backtest", "🧠 Model", "📰 Headlines", "🔁 Performance & Retrain",
+        "📈 Price vs Sentiment", "💼 Backtest", "🧠 Model", "📰 Headlines", "📊 Model Performance",
     ])
 
     with atab1:
@@ -1025,52 +1178,16 @@ else:
 
             st.divider()
 
-            # ── Retrain section ────────────────────────────────────────────────
-            st.markdown("#### Retrain model with feedback")
-
-            from src.retrainer import Retrainer
-            retrainer = Retrainer()
-            should, reason = retrainer.should_retrain(full_ticker)
-
-            if should:
-                st.success(f"✅ {reason}")
-            else:
-                st.info(f"ℹ️ {reason}")
-
-            col_btn, col_info = st.columns([1, 3])
-            with col_btn:
-                do_retrain = st.button(
-                    "🔁 Retrain now",
-                    type="primary" if should else "secondary",
-                    use_container_width=True,
-                    key=f"retrain_{full_ticker}",
-                )
-            with col_info:
-                st.caption(
-                    "Retrains the Random Forest on the full current dataset, "
-                    "marks incorporated feedback rows as retrained, "
-                    "and cleans up rows older than 30 days."
-                )
-
-            if do_retrain:
-                with st.spinner("Retraining model…"):
-                    try:
-                        result = retrainer.run(
-                            ticker=full_ticker,
-                            features_df=data["features"],
-                            X=data["X"],
-                            y=data["X"],   # retrainer pulls y internally
-                        )
-                        if result["drift_warning"]:
-                            st.warning(result["drift_warning"])
-                        else:
-                            st.success(
-                                f"✅ Retrain complete! "
-                                f"Accuracy: {result['prev_accuracy']}% → {result['new_accuracy']}% · "
-                                f"{result['rows_incorporated']} rows incorporated · "
-                                f"{result['rows_cleaned']} old rows cleaned up."
-                            )
-                        # Clear cache so next pipeline run uses updated data
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Retrain failed: {e}")
+            # ── Automated retraining info ──────────────────────────────────────
+            st.markdown("#### 🤖 Automated retraining")
+            st.info(
+                "The model retrains automatically every weekday at **8:00 AM ET** "
+                "via GitHub Actions — one hour before US market open. "
+                "Indian and Asian market tickers retrain on the same schedule, "
+                "capturing overnight news. No manual action needed."
+            )
+            st.caption(
+                "Retraining incorporates yesterday's actual outcomes, "
+                "updates today's prediction, marks feedback rows as retrained, "
+                "and cleans up rows older than 30 days."
+            )
