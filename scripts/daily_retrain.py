@@ -17,8 +17,17 @@ import logging
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Resolve project root — works whether called from repo root, fintech-sentiment/,
+# or scripts/ directory directly
+_script_dir = Path(__file__).resolve().parent      # scripts/
+ROOT        = _script_dir.parent                   # fintech-sentiment/ or repo root
+
+# If src/ isn't directly in ROOT, check if we're one level too deep
+if not (ROOT / "src").exists():
+    ROOT = ROOT.parent
+
 sys.path.insert(0, str(ROOT))
+logger_setup = logging.getLogger("path_setup")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -112,38 +121,54 @@ def fill_missing_actuals(fb) -> int:
                 )
 
                 # Build a date → direction lookup
-                price_map = {str(row["date"]): int(row["direction"])
-                             for _, row in df.iterrows()
-                             if not pd.isna(row["direction"])}
+                # Use strftime to ensure consistent YYYY-MM-DD string format
+                price_map = {}
+                for _, row in df.iterrows():
+                    if pd.isna(row["direction"]):
+                        continue
+                    # Handle both date objects and timestamps
+                    d = row["date"]
+                    if hasattr(d, "strftime"):
+                        key = d.strftime("%Y-%m-%d")
+                    else:
+                        key = str(d)[:10]
+                    price_map[key] = int(row["direction"])
+
+                logger.info(f"  {ticker}: price_map dates = {sorted(price_map.keys())}")
 
                 for pred_row in rows:
-                    td = pred_row["trade_date"]
+                    td = pred_row["trade_date"][:10]   # ensure YYYY-MM-DD
 
                     # We need the return on trade_date+1
-                    # (prediction is made on T, outcome is T+1's return)
-                    trade_dt    = datetime.strptime(td, "%Y-%m-%d").date()
-                    next_day    = trade_dt + timedelta(days=1)
+                    # (prediction made on T, outcome is T+1 return)
+                    trade_dt = datetime.strptime(td, "%Y-%m-%d").date()
+                    next_day = trade_dt + timedelta(days=1)
 
-                    # Walk forward to find the next trading day with data
+                    # Walk forward up to 5 days to find next trading day
                     actual = None
-                    for offset in range(5):   # look up to 5 days ahead (weekends/holidays)
-                        check = str(next_day + timedelta(days=offset))
+                    for offset in range(5):
+                        check = (next_day + timedelta(days=offset)).strftime("%Y-%m-%d")
                         if check in price_map:
                             actual = price_map[check]
+                            logger.info(f"  Found actual for {ticker} {td}: {check} → direction={actual}")
                             break
 
-                    if actual is not None and actual != 0:
-                        correct = int(pred_row["predicted"]) == actual
-                        client.table("predictions").update({
-                            "actual":  actual,
-                            "correct": correct,
-                        }).eq("id", pred_row["id"]).execute()
+                    if actual is not None:
+                        # Write actual regardless of value (including 0 for flat days)
+                        # so the row is marked as resolved and not re-processed
+                        correct = int(pred_row["predicted"]) == actual if actual != 0 else None
+                        update_payload = {"actual": actual}
+                        if correct is not None:
+                            update_payload["correct"] = correct
+                        client.table("predictions").update(update_payload).eq("id", pred_row["id"]).execute()
                         updated += 1
                         logger.info(
-                            f"  Filled actual: {ticker} {td} → "
-                            f"{'correct' if correct else 'wrong'} "
-                            f"(predicted={pred_row['predicted']}, actual={actual})"
+                            f"  Filled: {ticker} {td} actual={actual} "
+                            f"predicted={pred_row['predicted']} "
+                            f"correct={correct}"
                         )
+                    else:
+                        logger.info(f"  No next-day data yet for {ticker} {td} (next_day={next_day}) — will retry tomorrow")
 
             except Exception as e:
                 logger.warning(f"  Could not fill actuals for {ticker}: {e}")
