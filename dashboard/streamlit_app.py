@@ -147,20 +147,27 @@ st.markdown("""
     [data-testid="stMetricDelta"] { font-size: 0.78rem !important; }
 
     /* ── Expanders ────────────────────────────────────────────────────────── */
-    .streamlit-expanderHeader {
+    .streamlit-expanderHeader, [data-testid="stExpanderToggleIcon"],
+    details > summary {
         background: #0d1117 !important;
         border: 1px solid #1a2035 !important;
         border-radius: 8px !important;
         color: #94a3b8 !important;
         font-family: 'Inter', sans-serif !important;
-        font-size: 0.85rem !important;
+        font-size: 0.84rem !important;
+        list-style: none !important;
     }
-    .streamlit-expanderContent {
+    .streamlit-expanderContent, details > div {
         background: #090e18 !important;
         border: 1px solid #1a2035 !important;
         border-top: none !important;
         border-radius: 0 0 8px 8px !important;
     }
+    /* Hide the _arrow_right material icon text that leaks in some Streamlit versions */
+    [data-testid="stExpanderToggleIcon"] { display: none !important; }
+    details summary svg { display: none !important; }
+    /* Suppress any raw icon text nodes */
+    .streamlit-expanderHeader p::before { content: none !important; }
 
     /* ── Dataframes ───────────────────────────────────────────────────────── */
     [data-testid="stDataFrame"] {
@@ -171,7 +178,7 @@ st.markdown("""
 
     /* ── Captions ─────────────────────────────────────────────────────────── */
     .stCaption, [data-testid="stCaptionContainer"] {
-        color: #334155 !important;
+        color: #64748b !important;
         font-size: 0.75rem !important;
     }
 
@@ -276,7 +283,7 @@ st.markdown("""
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: #334155;
+        color: #64748b;
         margin-bottom: 0.75rem;
         padding-bottom: 0.4rem;
         border-bottom: 1px solid #1a2035;
@@ -665,8 +672,8 @@ _nav_html = (
     "padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;"
     "}"
     ".logo{font-family:'JetBrains Mono','DM Mono',monospace;font-size:1rem;font-weight:600;color:#3b82f6;letter-spacing:-0.01em;}"
-    ".sub{font-size:0.73rem;color:#334155;margin-left:0.6rem;letter-spacing:0.01em;}"
-    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#334155;letter-spacing:0.02em;}"
+    ".sub{font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;}"
+    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#64748b;letter-spacing:0.02em;}"
     ".dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:middle;}"
     "</style>"
     "<div class='nav'>"
@@ -967,15 +974,19 @@ if st.session_state.active_tab == "home":
 
     if trending:
         t_cols = st.columns(3)
-        border_colors = ["#2563eb", "#7c3aed", "#0891b2"]
+        border_colors = ["#3b82f6", "#8b5cf6", "#06b6d4"]
         for i, (col, item) in enumerate(zip(t_cols, trending)):
+            bc = border_colors[i]
+            url = item.get("url", "#")
             with col:
-                with st.expander(item["title"], expanded=False):
-                    st.markdown(f"""
-                    **Source:** {item['source']}
-
-                    🔗 [Read full article]({item['url']})
-                    """)
+                st.markdown(f"""
+                <div class="t-card" style="border-top-color:{bc}">
+                    <div class="t-title">{item['title']}</div>
+                    <div class="t-meta">{item['source']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if url and url != "#":
+                    st.markdown(f"[Read article →]({url})", unsafe_allow_html=False)
     else:
         st.info("Could not load trending news — check your internet connection.")
 
@@ -1000,8 +1011,14 @@ if st.session_state.active_tab == "home":
         if results:
             st.caption(f"{len(results)} results for **'{news_query}'**")
             for item in results:
-                with st.expander(f"📰 {item['title']}", expanded=False):
-                    st.markdown(f"**Source:** {item['source']}\n\n🔗 [Read full article]({item['url']})")
+                url = item.get("url","#")
+                link_html = f"&nbsp;<a href='{url}' target='_blank' style='color:#3b82f6;font-size:0.75rem'>Read →</a>" if url != "#" else ""
+                st.markdown(f"""
+                <div class="hl-row" style="border-color:#3b82f6">
+                    📰 <strong>{item['title']}</strong>{link_html}<br>
+                    <span style="color:#475569;font-size:0.75rem">{item['source']}</span>
+                </div>
+                """, unsafe_allow_html=True)
         else:
             st.info(f"No results found for **'{news_query}'**.")
 
@@ -1077,18 +1094,26 @@ else:
         for i, (_, row) in enumerate(trending_t.iterrows()):
             score = row["sentiment_score"]
             if score > 0.05:
-                badge, badge_color = "Bullish 🟢", "#16a34a"
+                badge, bc, badge_color = "Bullish", "#22c55e", "#16a34a"
             elif score < -0.05:
-                badge, badge_color = "Bearish 🔴", "#dc2626"
+                badge, bc, badge_color = "Bearish", "#ef4444", "#dc2626"
             else:
-                badge, badge_color = "Neutral ⚪", "#6b7280"
+                badge, bc, badge_color = "Neutral", "#64748b", "#6b7280"
             pub = pd.to_datetime(row["published_at"]).strftime("%b %d")
             url = row.get("url", "#") if "url" in row.index else "#"
-            label = f"{badge}  {row['title']}"
             with t_cols[i]:
-                with st.expander(label[:80] + ("…" if len(label) > 80 else ""), expanded=False):
-                    link = f"\n\n🔗 [Read full article]({url})" if url != "#" else ""
-                    st.markdown(f"**{pub}** · {row['source']} · score: `{score:+.3f}`{link}")
+                st.markdown(f"""
+                <div class=\"t-card\" style=\"border-top-color:{bc}\">
+                    <div style=\"margin-bottom:0.3rem\">
+                        <span class=\"badge\" style=\"background:{badge_color}\">{badge}</span>
+                        <span style=\"font-size:0.7rem;color:#475569;margin-left:0.4rem\">{score:+.3f}</span>
+                    </div>
+                    <div class=\"t-title\">{row['title']}</div>
+                    <div class=\"t-meta\">{pub} · {row['source']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if url and url != "#":
+                    st.markdown(f"[Read →]({url})")
         st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Log prediction to Supabase (silently, non-blocking) ───────────────────
@@ -1264,13 +1289,17 @@ else:
                 disp = disp.head(50)
             for _, row in disp.iterrows():
                 score = row["sentiment_score"]
+                bc = "#22c55e" if score > 0.05 else ("#ef4444" if score < -0.05 else "#475569")
                 em = "🟢" if score > 0.05 else ("🔴" if score < -0.05 else "⚪")
                 pub = pd.to_datetime(row["published_at"]).strftime("%b %d")
                 url = row.get("url", "#") if "url" in row.index else "#"
-                label = f"{em} {row['title']}"
-                with st.expander(label, expanded=False):
-                    link = f"\n\n🔗 [Read full article]({url})" if url != "#" else ""
-                    st.markdown(f"**{pub}** · {row['source']} · score: `{score:+.3f}`{link}")
+                link_html = f"&nbsp;<a href='{url}' target='_blank' style='color:#3b82f6;font-size:0.75rem'>Read →</a>" if url != "#" else ""
+                st.markdown(f"""
+                <div class="hl-row" style="border-color:{bc}">
+                    {em} <strong>{row['title']}</strong>{link_html}<br>
+                    <span style="color:#475569;font-size:0.75rem">{pub} · {row['source']} · {score:+.3f}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
     # ── Tab 5: Performance & Retrain ───────────────────────────────────────────
     with atab5:
