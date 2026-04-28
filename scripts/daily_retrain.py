@@ -100,10 +100,13 @@ def fill_missing_actuals(fb) -> int:
         for ticker, rows in by_ticker.items():
             try:
                 # Fetch last 10 days of price data for this ticker
+                # Add 2 days to end to ensure today's data is included
+                # (yfinance end is exclusive, and we may be running on Monday
+                #  needing Friday's data which is the "next day" after Thursday's prediction)
                 df = yf.download(
                     ticker,
                     start=(datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%d"),
-                    end=datetime.utcnow().strftime("%Y-%m-%d"),
+                    end=(datetime.utcnow() + timedelta(days=2)).strftime("%Y-%m-%d"),
                     progress=False,
                     auto_adjust=True,
                 )
@@ -114,27 +117,25 @@ def fill_missing_actuals(fb) -> int:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
 
-                df["date"]         = pd.to_datetime(df.index).date
+                # Keep index as DatetimeIndex — use it directly for date lookup
                 df["daily_return"] = df["Close"].pct_change() * 100
                 df["direction"]    = df["daily_return"].apply(
                     lambda r: 1 if r > 0.1 else (-1 if r < -0.1 else 0)
                 )
 
                 # Build a date → direction lookup
-                # Use strftime to ensure consistent YYYY-MM-DD string format
+                # Use the DatetimeIndex directly — most reliable approach
+                # df.index is a DatetimeIndex; convert to YYYY-MM-DD strings
                 price_map = {}
-                for _, row in df.iterrows():
+                for idx, row in df.iterrows():
                     if pd.isna(row["direction"]):
                         continue
-                    # Handle both date objects and timestamps
-                    d = row["date"]
-                    if hasattr(d, "strftime"):
-                        key = d.strftime("%Y-%m-%d")
-                    else:
-                        key = str(d)[:10]
+                    # idx is a Timestamp — use strftime directly on it
+                    key = pd.Timestamp(idx).strftime("%Y-%m-%d")
                     price_map[key] = int(row["direction"])
 
-                logger.info(f"  {ticker}: price_map dates = {sorted(price_map.keys())}")
+                logger.info(f"  {ticker}: {len(price_map)} days, latest={max(price_map.keys()) if price_map else 'none'}")
+                logger.info(f"  {ticker}: all dates = {sorted(price_map.keys())}")
 
                 for pred_row in rows:
                     td = pred_row["trade_date"][:10]   # ensure YYYY-MM-DD
@@ -168,7 +169,7 @@ def fill_missing_actuals(fb) -> int:
                             f"correct={correct}"
                         )
                     else:
-                        logger.info(f"  No next-day data yet for {ticker} {td} (next_day={next_day}) — will retry tomorrow")
+                        logger.info(f"  No next-day data yet for {ticker} {td} (looking for {next_day} onwards) — will retry tomorrow")
 
             except Exception as e:
                 logger.warning(f"  Could not fill actuals for {ticker}: {e}")
