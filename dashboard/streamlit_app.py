@@ -29,53 +29,258 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
-    html, body, [class*="css"]  { font-family: 'DM Sans', sans-serif; }
-    h1, h2, h3                  { font-family: 'DM Mono', monospace; letter-spacing:-0.02em; }
+    /* ── Fonts ────────────────────────────────────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-    /* Top nav bar */
-    .nav-bar { display:flex; align-items:center; justify-content:space-between;
-               padding:0.6rem 0; margin-bottom:1.5rem; border-bottom:1px solid #1e2130; }
-    .nav-logo { font-family:'DM Mono',monospace; font-size:1.1rem; font-weight:500; color:#2563eb; }
-    .nav-sub  { font-size:0.78rem; color:#6b7280; margin-left:0.5rem; }
+    html, body, [class*="css"], .stMarkdown, .stText, p, span, div {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    }
+    h1, h2, h3, code, .mono {
+        font-family: 'JetBrains Mono', monospace !important;
+        letter-spacing: -0.02em;
+    }
 
-    /* Ticker tab pills */
-    .tab-pill { display:inline-flex; align-items:center; gap:0.35rem;
-                background:#1e2130; border:1px solid #374151; border-radius:20px;
-                padding:0.3rem 0.75rem; font-size:0.82rem; font-family:'DM Mono',monospace;
-                cursor:pointer; margin-right:0.4rem; margin-bottom:0.4rem; }
-    .tab-pill.active { background:#2563eb; border-color:#2563eb; color:#fff; }
-    .tab-pill .close { color:#9ca3af; font-size:0.75rem; margin-left:0.2rem; }
+    /* ── Global background ────────────────────────────────────────────────── */
+    .stApp, .main, section[data-testid="stSidebar"] {
+        background-color: #080c14 !important;
+    }
+    .block-container {
+        padding-top: 1rem !important;
+        max-width: 1200px !important;
+    }
 
-    /* Index cards */
-    .index-card { background:#0f1117; border:1px solid #1e2130; border-radius:10px;
-                  padding:0.9rem 1rem 0.5rem; }
-    .index-name { font-size:0.78rem; color:#6b7280; margin-bottom:0.1rem; }
-    .index-val  { font-family:'DM Mono',monospace; font-size:1.25rem; font-weight:500; }
-    .index-chg-up   { color:#16a34a; font-size:0.82rem; }
-    .index-chg-down { color:#dc2626; font-size:0.82rem; }
+    /* ── Hide Streamlit chrome ────────────────────────────────────────────── */
+    #MainMenu, footer, header[data-testid="stHeader"],
+    .stDeployButton, [data-testid="stToolbar"] {
+        display: none !important;
+    }
 
-    /* Trending cards */
-    .t-card { background:#0f1117; border:1px solid #1e2130; border-radius:10px;
-              padding:0.9rem 1rem; height:100%; border-top-width:3px; }
-    .t-title { font-size:0.88rem; font-weight:500; line-height:1.4; margin-bottom:0.4rem; }
-    .t-meta  { font-size:0.75rem; color:#6b7280; }
+    /* ── Dividers ─────────────────────────────────────────────────────────── */
+    hr { border-color: #1a2035 !important; margin: 1.5rem 0 !important; }
+
+    /* ── Headings ─────────────────────────────────────────────────────────── */
+    h1 { font-size: 1.6rem !important; color: #f1f5f9 !important; font-weight: 600 !important; }
+    h2 { font-size: 1.25rem !important; color: #cbd5e1 !important; }
+    h3 { font-size: 1.05rem !important; color: #94a3b8 !important; font-weight: 500 !important; }
+
+    /* ── Buttons ──────────────────────────────────────────────────────────── */
+    .stButton > button {
+        border-radius: 8px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        border: 1px solid #1e293b !important;
+        background: #0f172a !important;
+        color: #94a3b8 !important;
+        transition: all 0.15s ease !important;
+    }
+    .stButton > button:hover {
+        border-color: #3b82f6 !important;
+        color: #e2e8f0 !important;
+        background: #1e293b !important;
+    }
+    .stButton > button[kind="primary"] {
+        background: #3b82f6 !important;
+        border-color: #3b82f6 !important;
+        color: #fff !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: #2563eb !important;
+        border-color: #2563eb !important;
+    }
+
+    /* ── Inputs & selects ─────────────────────────────────────────────────── */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div {
+        background: #0d1117 !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+        font-family: 'Inter', sans-serif !important;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59,130,246,0.15) !important;
+    }
+
+    /* ── Tabs ─────────────────────────────────────────────────────────────── */
+    .stTabs [data-baseweb="tab-list"] {
+        background: transparent !important;
+        border-bottom: 1px solid #1a2035 !important;
+        gap: 0 !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent !important;
+        color: #64748b !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        padding: 0.5rem 1rem !important;
+        border-bottom: 2px solid transparent !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #3b82f6 !important;
+        border-bottom: 2px solid #3b82f6 !important;
+        background: transparent !important;
+    }
+
+    /* ── Metrics ──────────────────────────────────────────────────────────── */
+    [data-testid="stMetric"] {
+        background: #0d1117 !important;
+        border: 1px solid #1a2035 !important;
+        border-radius: 10px !important;
+        padding: 0.8rem 1rem !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.72rem !important;
+        color: #475569 !important;
+        font-weight: 500 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 1.3rem !important;
+        color: #f1f5f9 !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stMetricDelta"] { font-size: 0.78rem !important; }
+
+    /* ── Expanders ────────────────────────────────────────────────────────── */
+    .streamlit-expanderHeader {
+        background: #0d1117 !important;
+        border: 1px solid #1a2035 !important;
+        border-radius: 8px !important;
+        color: #94a3b8 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.85rem !important;
+    }
+    .streamlit-expanderContent {
+        background: #090e18 !important;
+        border: 1px solid #1a2035 !important;
+        border-top: none !important;
+        border-radius: 0 0 8px 8px !important;
+    }
+
+    /* ── Dataframes ───────────────────────────────────────────────────────── */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #1a2035 !important;
+        border-radius: 8px !important;
+        overflow: hidden !important;
+    }
+
+    /* ── Captions ─────────────────────────────────────────────────────────── */
+    .stCaption, [data-testid="stCaptionContainer"] {
+        color: #334155 !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* ── Cards — index ────────────────────────────────────────────────────── */
+    .index-card {
+        background: linear-gradient(145deg, #0d1117, #111827);
+        border: 1px solid #1a2035;
+        border-radius: 12px;
+        padding: 1rem 1rem 0.4rem;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+    .index-name { font-size: 0.72rem; color: #475569; margin-bottom: 0.15rem;
+                  text-transform: uppercase; letter-spacing: 0.06em; }
+    .index-val  { font-family: 'JetBrains Mono', monospace; font-size: 1.4rem;
+                  font-weight: 500; color: #f1f5f9; line-height: 1.2; }
+    .index-chg-up   { color: #22c55e; font-size: 0.8rem; font-weight: 500; }
+    .index-chg-down { color: #ef4444; font-size: 0.8rem; font-weight: 500; }
+    .index-status   { font-size: 0.7rem; color: #334155; margin-top: 0.2rem; }
+
+    /* ── Cards — trending news ────────────────────────────────────────────── */
+    .t-card {
+        background: linear-gradient(145deg, #0d1117, #0f1623);
+        border: 1px solid #1a2035;
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        height: 100%;
+        border-top-width: 2px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        transition: border-color 0.2s;
+    }
+    .t-title { font-size: 0.87rem; font-weight: 500; line-height: 1.45;
+               margin-bottom: 0.5rem; color: #cbd5e1; }
+    .t-meta  { font-size: 0.72rem; color: #334155; }
     .badge   { display:inline-block; padding:0.1rem 0.4rem; border-radius:4px;
-               font-size:0.72rem; color:#fff; margin-left:0.3rem; }
+               font-size:0.7rem; color:#fff; margin-left:0.3rem;
+               font-weight: 500; letter-spacing: 0.02em; }
 
-    /* Signal blocks */
-    .signal-buy  { background:linear-gradient(135deg,#052e16,#14532d); border:1px solid #16a34a; border-radius:12px; padding:1.5rem; text-align:center; }
-    .signal-sell { background:linear-gradient(135deg,#2d0a0a,#7f1d1d); border:1px solid #dc2626; border-radius:12px; padding:1.5rem; text-align:center; }
-    .signal-hold { background:linear-gradient(135deg,#111827,#1f2937); border:1px solid #4b5563; border-radius:12px; padding:1.5rem; text-align:center; }
+    /* ── Signal blocks ────────────────────────────────────────────────────── */
+    .signal-buy {
+        background: linear-gradient(145deg, #021a0e, #052e16);
+        border: 1px solid #16a34a;
+        border-radius: 14px; padding: 1.75rem; text-align: center;
+        box-shadow: 0 0 30px rgba(22,163,74,0.12);
+    }
+    .signal-sell {
+        background: linear-gradient(145deg, #1a0505, #2d0a0a);
+        border: 1px solid #dc2626;
+        border-radius: 14px; padding: 1.75rem; text-align: center;
+        box-shadow: 0 0 30px rgba(220,38,38,0.12);
+    }
+    .signal-hold {
+        background: linear-gradient(145deg, #0a0e18, #111827);
+        border: 1px solid #334155;
+        border-radius: 14px; padding: 1.75rem; text-align: center;
+        box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
 
-    /* Headlines */
-    .hl-row { border-left:3px solid; padding:0.4rem 0.75rem; margin-bottom:0.4rem;
-              border-radius:0 4px 4px 0; background:rgba(255,255,255,0.02); font-size:0.85rem; }
-    .warn-box { background:#2d1b00; border:1px solid #d97706; border-radius:8px;
-                padding:1rem 1.25rem; margin-bottom:1rem; }
+    /* ── Headlines ────────────────────────────────────────────────────────── */
+    .hl-row {
+        border-left: 2px solid;
+        padding: 0.5rem 0.85rem;
+        margin-bottom: 0.35rem;
+        border-radius: 0 6px 6px 0;
+        background: rgba(255,255,255,0.015);
+        font-size: 0.84rem;
+        transition: background 0.15s;
+    }
+    .hl-row:hover { background: rgba(255,255,255,0.04); }
 
-    /* Search box */
-    .search-wrap { position:relative; }
+    /* ── Warn box ─────────────────────────────────────────────────────────── */
+    .warn-box {
+        background: #1a0e00;
+        border: 1px solid #92400e;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        color: #fcd34d;
+    }
+
+    /* ── Sentiment cards ──────────────────────────────────────────────────── */
+    .sent-card {
+        border-radius: 12px;
+        padding: 0.85rem 0.75rem;
+        text-align: center;
+        border: 1px solid;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    /* ── Spinner ──────────────────────────────────────────────────────────── */
+    .stSpinner > div { border-color: #3b82f6 transparent transparent !important; }
+
+    /* ── Info / warning / success boxes ──────────────────────────────────── */
+    .stAlert { border-radius: 10px !important; border-width: 1px !important; }
+
+    /* ── Slider ───────────────────────────────────────────────────────────── */
+    .stSlider [data-baseweb="slider"] { margin-top: 0.5rem; }
+
+    /* ── Section headers with subtle rule ────────────────────────────────── */
+    .section-header {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #334155;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid #1a2035;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -454,14 +659,15 @@ import streamlit.components.v1 as components
 _nav_html = (
     "<style>"
     "*{box-sizing:border-box;margin:0;padding:0;}"
-    "body{background:transparent;font-family:'DM Sans',sans-serif;}"
+    "body{background:#080c14;font-family:'Inter',system-ui,sans-serif;}"
     ".nav{"
     "display:flex;align-items:center;justify-content:space-between;"
-    "padding:0.5rem 0;border-bottom:1px solid #1e2130;"
+    "padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;"
     "}"
-    ".logo{font-family:'DM Mono',monospace;font-size:1.1rem;font-weight:500;color:#2563eb;}"
-    ".sub{font-size:0.78rem;color:#6b7280;margin-left:0.5rem;}"
-    ".clk{font-family:'DM Mono',monospace;font-size:0.8rem;color:#6b7280;letter-spacing:0.01em;}"
+    ".logo{font-family:'JetBrains Mono','DM Mono',monospace;font-size:1rem;font-weight:600;color:#3b82f6;letter-spacing:-0.01em;}"
+    ".sub{font-size:0.73rem;color:#334155;margin-left:0.6rem;letter-spacing:0.01em;}"
+    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#334155;letter-spacing:0.02em;}"
+    ".dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:middle;}"
     "</style>"
     "<div class='nav'>"
     "<span><span class='logo'>[ICON] Sentiment Signal</span>"
@@ -536,6 +742,76 @@ if st.session_state.active_tab == "home":
             f"📅 **Weekend mode** — {mkt_status['note']}",
             icon="🏖️",
         )
+
+    # ── Analyse a stock — primary action at top ────────────────────────────────
+    st.markdown("### 📊 Analyse a stock")
+    st.caption("Select a market and ticker to open a new analysis tab. Results persist as tabs above.")
+
+    # Market and Exchange MUST be outside the form so they react dynamically
+    f1, f2 = st.columns([2, 2])
+    with f1:
+        market = st.selectbox(
+            "Market",
+            ["— select —"] + list(MARKET_CONFIG.keys()) + ["🇪🇺 Europe"],
+            key="home_market",
+        )
+    with f2:
+        exchange = None
+        if market == "🇪🇺 Europe":
+            exchange = st.selectbox("Exchange", list(EU_EXCHANGES.keys()), key="home_exchange")
+
+    with st.form("add_ticker_form"):
+        f3, f4, f5 = st.columns([3, 3, 1])
+        with f3:
+            if market == "— select —":
+                st.selectbox("Ticker", ["— select a market above first —"],
+                             key="home_ticker_empty", disabled=True)
+                display_ticker = ""
+            elif market == "🇪🇺 Europe" and exchange:
+                ex_cfg = EU_EXCHANGES[exchange]
+                ticker_opts = ["— select —"] + [
+                    f"{t}  —  {n}" for t, n in zip(ex_cfg["tickers"], ex_cfg["names"])
+                ]
+                sel = st.selectbox("Ticker", ticker_opts, key="home_eu_ticker")
+                display_ticker = "" if sel == "— select —" else sel.split("  —  ")[0].strip()
+            else:
+                cfg   = MARKET_CONFIG[market]
+                all_t = cfg["tickers"] + cfg.get("us_adrs", [])
+                all_n = cfg["names"] + cfg.get("adr_names", [])
+                ticker_opts = ["— select —"] + [
+                    f"{t}  —  {n}" for t, n in zip(all_t, all_n)
+                ]
+                sel = st.selectbox("Ticker", ticker_opts, key="home_ticker")
+                display_ticker = "" if sel == "— select —" else sel.split("  —  ")[0].strip()
+        with f4:
+            custom_input = st.text_input(
+                "Or type a ticker directly",
+                placeholder="e.g. RELIANCE, BMW, 0700",
+                key="home_custom",
+            )
+        with f5:
+            st.markdown("<br>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("Open →", type="primary", use_container_width=True)
+
+    if submitted:
+        if market == "— select —":
+            st.warning("Please select a market first.")
+        elif custom_input.strip():
+            is_valid, full_ticker, custom_error = validate_custom(custom_input, market, exchange)
+            display_ticker = full_ticker.split(".")[0]
+            if custom_error:
+                st.markdown(f'<div class="warn-box">⚠️ {custom_error}</div>', unsafe_allow_html=True)
+            else:
+                company = get_company_name(display_ticker, market, exchange)
+                add_ticker_tab(full_ticker, display_ticker, company, market, exchange)
+        elif not display_ticker:
+            st.warning("Please select a ticker or type one directly.")
+        else:
+            full_ticker = resolve_ticker(display_ticker, market, exchange)
+            company     = get_company_name(display_ticker, market, exchange)
+            add_ticker_tab(full_ticker, display_ticker, company, market, exchange)
+
+    st.divider()
 
     # ── World indices ──────────────────────────────────────────────────────────
     st.markdown("### 🌍 Global markets")
@@ -729,80 +1005,7 @@ if st.session_state.active_tab == "home":
         else:
             st.info(f"No results found for **'{news_query}'**.")
 
-    st.divider()
 
-    # ── Add ticker section ─────────────────────────────────────────────────────
-    st.markdown("### 📊 Analyse a stock")
-    st.caption("Select a market and ticker to open a new analysis tab.")
-
-    # Market and Exchange MUST be outside the form so they react dynamically
-    # when the user changes them. Only the final ticker selection + button go in the form.
-    f1, f2 = st.columns([2, 2])
-    with f1:
-        market = st.selectbox(
-            "Market",
-            ["— select —"] + list(MARKET_CONFIG.keys()) + ["🇪🇺 Europe"],
-            key="home_market",
-        )
-    with f2:
-        exchange = None
-        if market == "🇪🇺 Europe":
-            exchange = st.selectbox("Exchange", list(EU_EXCHANGES.keys()), key="home_exchange")
-
-    # Ticker list + custom input + button in a form so Enter works
-    with st.form("add_ticker_form"):
-        f3, f4, f5 = st.columns([3, 3, 1])
-
-        with f3:
-            if market == "— select —":
-                st.selectbox("Ticker", ["— select a market above first —"],
-                             key="home_ticker_empty", disabled=True)
-                display_ticker = ""
-            elif market == "🇪🇺 Europe" and exchange:
-                ex_cfg = EU_EXCHANGES[exchange]
-                ticker_opts = ["— select —"] + [
-                    f"{t}  —  {n}" for t, n in zip(ex_cfg["tickers"], ex_cfg["names"])
-                ]
-                sel = st.selectbox("Ticker", ticker_opts, key="home_eu_ticker")
-                display_ticker = "" if sel == "— select —" else sel.split("  —  ")[0].strip()
-            else:
-                cfg   = MARKET_CONFIG[market]
-                all_t = cfg["tickers"] + cfg.get("us_adrs", [])
-                all_n = cfg["names"] + cfg.get("adr_names", [])
-                ticker_opts = ["— select —"] + [
-                    f"{t}  —  {n}" for t, n in zip(all_t, all_n)
-                ]
-                sel = st.selectbox("Ticker", ticker_opts, key="home_ticker")
-                display_ticker = "" if sel == "— select —" else sel.split("  —  ")[0].strip()
-
-        with f4:
-            custom_input = st.text_input(
-                "Or type a ticker directly",
-                placeholder="e.g. RELIANCE, BMW, 0700",
-                key="home_custom",
-            )
-
-        with f5:
-            st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("Open →", type="primary", use_container_width=True)
-
-    if submitted:
-        if market == "— select —":
-            st.warning("Please select a market first.")
-        elif custom_input.strip():
-            is_valid, full_ticker, custom_error = validate_custom(custom_input, market, exchange)
-            display_ticker = full_ticker.split(".")[0]
-            if custom_error:
-                st.markdown(f'<div class="warn-box">⚠️ {custom_error}</div>', unsafe_allow_html=True)
-            else:
-                company = get_company_name(display_ticker, market, exchange)
-                add_ticker_tab(full_ticker, display_ticker, company, market, exchange)
-        elif not display_ticker:
-            st.warning("Please select a ticker or type one directly.")
-        else:
-            full_ticker = resolve_ticker(display_ticker, market, exchange)
-            company     = get_company_name(display_ticker, market, exchange)
-            add_ticker_tab(full_ticker, display_ticker, company, market, exchange)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
