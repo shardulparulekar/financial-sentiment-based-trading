@@ -446,61 +446,53 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # NAV BAR + TAB PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Nav bar — static part (Streamlit strips scripts from st.markdown)
-st.markdown("""
-<div class="nav-bar">
-    <span>
-        <span class="nav-logo">📡 Sentiment Signal</span>
-        <span class="nav-sub">FinBERT-powered global trading signals</span>
-    </span>
-    <span style="font-family:'DM Mono',monospace;font-size:0.8rem;color:#6b7280" id="clock-placeholder">
-        &nbsp;
-    </span>
-</div>
-""", unsafe_allow_html=True)
-
-# Clock — uses st.components.v1.html (st.markdown strips scripts)
+# Nav bar + live clock
+# Strategy: render the entire nav bar including clock inside components.html
+# so the script runs. height=38 makes it visible. Negative margin pulls it flush.
 import streamlit.components.v1 as components
-clock_html = (
+
+_nav_html = (
     "<style>"
-    "body{margin:0;padding:0;background:transparent;}"
-    "#clock{"
-    "font-family:'DM Mono',monospace;"
-    "font-size:0.82rem;"
-    "color:#6b7280;"
-    "letter-spacing:0.01em;"
-    "position:fixed;"
-    "top:14px;"
-    "right:80px;"
-    "z-index:9999;"
-    "background:transparent;"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{background:transparent;font-family:'DM Sans',sans-serif;}"
+    ".nav{"
+    "display:flex;align-items:center;justify-content:space-between;"
+    "padding:0.5rem 0;border-bottom:1px solid #1e2130;"
     "}"
+    ".logo{font-family:'DM Mono',monospace;font-size:1.1rem;font-weight:500;color:#2563eb;}"
+    ".sub{font-size:0.78rem;color:#6b7280;margin-left:0.5rem;}"
+    ".clk{font-family:'DM Mono',monospace;font-size:0.8rem;color:#6b7280;letter-spacing:0.01em;}"
     "</style>"
-    "<div id='clock'>--</div>"
+    "<div class='nav'>"
+    "<span><span class='logo'>[ICON] Sentiment Signal</span>"
+    "<span class='sub'>FinBERT-powered global trading signals</span></span>"
+    "<span class='clk' id='clk'>--</span>"
+    "</div>"
     "<script>"
     "(function(){"
     "var D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];"
     "var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
     "function tick(){"
-    "var el=document.getElementById('clock');"
+    "var el=document.getElementById('clk');"
     "if(!el)return;"
     "var n=new Date();"
     "var hh=String(n.getHours()).padStart(2,'0');"
     "var mm=String(n.getMinutes()).padStart(2,'0');"
     "var tz='Local';"
     "try{tz=new Intl.DateTimeFormat('en',{timeZoneName:'short'})"
-    ".formatToParts(n).find(function(p){return p.type==='timeZoneName';}).value;}catch(e){}"
-    "el.textContent='[clock] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
+    ".formatToParts(n)"
+    ".find(function(p){return p.type==='timeZoneName';}).value;"
+    "}catch(e){}"
+    "el.textContent='[CLK] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
     "+'  '+hh+':'+mm+' '+tz;"
     "}"
-    "tick();"
-    "setInterval(tick,1000);"
+    "tick();setInterval(tick,1000);"
     "})();"
     "</script>"
 )
-# Replace [clock] placeholder with the actual clock emoji (avoids unicode issues)
-clock_html = clock_html.replace("[clock]", "🕐")
-components.html(clock_html, height=0, scrolling=False)
+# Insert emoji after building string (avoids encoding issues in Python 3.14)
+_nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
+components.html(_nav_html, height=42, scrolling=False)
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
