@@ -1173,6 +1173,86 @@ else:
         w2.metric("Trades",      metrics['n_trades'])
         w3.metric("Test Period", f"{metrics['n_days']} days")
 
+    # ── Sentiment disagreement panel ──────────────────────────────────────────
+    if not daily.empty:
+        last = daily.iloc[-1]
+
+        # Compute disagreement metrics from latest day
+        std_score   = float(last.get("std_score",  0.0) or 0.0)
+        sent_range  = float(last.get("sentiment_range", 0.0) or 0.0)
+        pct_pos     = float(last.get("pct_positive", 0.0) or 0.0) * 100
+        pct_neg     = float(last.get("pct_negative", 0.0) or 0.0) * 100
+        pct_neu     = float(last.get("pct_neutral",  0.0) or 0.0) * 100
+        n_arts      = int(last.get("n_articles", 0) or 0)
+        vol_spike   = float(last.get("volume_spike", 1.0) or 1.0)
+
+        # Disagreement level
+        if std_score > 0.4:
+            dis_label, dis_color, dis_note = "High", "#ef4444", "Headlines sharply divided — market hasn't priced in the uncertainty yet. Larger price move possible."
+        elif std_score > 0.2:
+            dis_label, dis_color, dis_note = "Moderate", "#f59e0b", "Some disagreement between headlines — mixed signals, interpret with caution."
+        else:
+            dis_label, dis_color, dis_note = "Low", "#22c55e", "Headlines largely agree — sentiment signal is more reliable today."
+
+        st.markdown("#### 📊 Today's sentiment breakdown")
+        dis_col1, dis_col2, dis_col3 = st.columns([2, 2, 3])
+
+        with dis_col1:
+            # Bullish / Bearish / Neutral breakdown bar
+            st.markdown(f"""
+            <div style="background:#0d1117;border:1px solid #1a2035;border-radius:10px;padding:0.9rem 1rem;">
+                <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;
+                            letter-spacing:0.08em;margin-bottom:0.6rem">Headline split</div>
+                <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:0.6rem">
+                    <div style="width:{pct_pos:.0f}%;background:#22c55e"></div>
+                    <div style="width:{pct_neu:.0f}%;background:#475569"></div>
+                    <div style="width:{pct_neg:.0f}%;background:#ef4444"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.75rem">
+                    <span style="color:#22c55e">🟢 {pct_pos:.0f}% bullish</span>
+                    <span style="color:#475569">⚪ {pct_neu:.0f}%</span>
+                    <span style="color:#ef4444">🔴 {pct_neg:.0f}% bearish</span>
+                </div>
+                <div style="margin-top:0.5rem;font-size:0.72rem;color:#334155">
+                    {n_arts} articles · {"⚡ Volume spike" if vol_spike > 1.5 else "Normal volume"}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with dis_col2:
+            # Disagreement gauge
+            gauge_pct = min(int(std_score / 0.6 * 100), 100)
+            filled    = "█" * (gauge_pct // 10)
+            empty     = "░" * (10 - gauge_pct // 10)
+            st.markdown(f"""
+            <div style="background:#0d1117;border:1px solid #1a2035;border-radius:10px;padding:0.9rem 1rem;">
+                <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;
+                            letter-spacing:0.08em;margin-bottom:0.5rem">Disagreement</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;
+                            color:{dis_color};letter-spacing:0.05em;margin-bottom:0.3rem">
+                    {filled}{empty}
+                </div>
+                <div style="font-size:1rem;font-weight:600;color:{dis_color};
+                            font-family:'JetBrains Mono',monospace">
+                    {dis_label}
+                </div>
+                <div style="font-size:0.72rem;color:#475569;margin-top:0.25rem">
+                    std={std_score:.3f} · range={sent_range:.3f}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with dis_col3:
+            # Interpretation note
+            st.markdown(f"""
+            <div style="background:#0d1117;border:1px solid {dis_color}44;border-radius:10px;
+                        padding:0.9rem 1rem;height:100%;border-left:3px solid {dis_color}">
+                <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;
+                            letter-spacing:0.08em;margin-bottom:0.4rem">What this means</div>
+                <div style="font-size:0.82rem;color:#cbd5e1;line-height:1.5">{dis_note}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
     st.divider()
 
     # ── Analysis tabs ──────────────────────────────────────────────────────────
@@ -1201,10 +1281,38 @@ else:
             hovertemplate=f"{currency_sym}%{{y:,.2f}}<extra></extra>",
         ), row=1, col=1)
         if has_s:
-            sc = ["#16a34a" if s >= 0 else "#dc2626" for s in daily_plot["mean_score"]]
+            # Colour bars by both direction AND disagreement:
+            # bright = consensus, muted/orange = high disagreement
+            def _bar_color(row):
+                std = row.get("std_score", 0) or 0
+                score = row["mean_score"]
+                if std > 0.4:
+                    return "#f59e0b"   # amber = high disagreement regardless of direction
+                return "#22c55e" if score >= 0 else "#ef4444"
+
+            if "std_score" in daily_plot.columns:
+                sc = [_bar_color(row) for _, row in daily_plot.iterrows()]
+                hover = [
+                    f"Score: {row['mean_score']:+.3f}<br>Std: {row.get('std_score',0):.3f}<br>Articles: {int(row.get('n_articles',0))}"
+                    for _, row in daily_plot.iterrows()
+                ]
+            else:
+                sc = ["#22c55e" if s >= 0 else "#ef4444" for s in daily_plot["mean_score"]]
+                hover = [f"{s:+.3f}" for s in daily_plot["mean_score"]]
+
             fig.add_trace(go.Bar(x=daily_plot.index, y=daily_plot["mean_score"],
-                marker_color=sc, showlegend=False, hovertemplate="%{y:+.3f}<extra></extra>"), row=2, col=1)
+                marker_color=sc, showlegend=False,
+                hovertemplate="%{customdata}<extra></extra>",
+                customdata=hover), row=2, col=1)
             fig.add_hline(y=0, line_dash="dash", line_color="#4b5563", row=2, col=1)
+
+            # Add a subtle legend note
+            fig.add_annotation(
+                text="🟡 amber = high disagreement between headlines",
+                xref="paper", yref="paper", x=1, y=0.42,
+                showarrow=False, font=dict(size=9, color="#64748b"),
+                xanchor="right",
+            )
             fig.add_trace(go.Bar(x=daily_plot.index, y=daily_plot["n_articles"],
                 marker_color="#6366f1", showlegend=False, hovertemplate="%{y} articles<extra></extra>"), row=3, col=1)
         fig.update_yaxes(title_text=currency_sym.strip(), row=1, col=1)
@@ -1273,33 +1381,80 @@ else:
             ]), hide_index=True, use_container_width=True)
 
     with atab4:
-        st.markdown("#### Search headlines")
-        news_q = st.text_input("Filter", label_visibility="collapsed",
-                               placeholder="Search headlines — e.g. earnings, iPhone, acquisition…",
-                               key=f"news_search_{full_ticker}")
+        h_search_col, h_mode_col = st.columns([4, 1])
+        with h_search_col:
+            news_q = st.text_input("Filter", label_visibility="collapsed",
+                                   placeholder="Search headlines — e.g. earnings, iPhone, acquisition…",
+                                   key=f"news_search_{full_ticker}")
+        with h_mode_col:
+            group_mode = st.toggle("Group by sentiment", value=True, key=f"group_{full_ticker}")
+
         if scored.empty:
             st.warning("No headlines available for this ticker.")
         else:
             disp = scored[["published_at","title","source","sentiment_score"]].sort_values("published_at", ascending=False)
+            if "url" in scored.columns:
+                disp["url"] = scored["url"]
+
             if news_q.strip():
                 disp = disp[disp["title"].str.lower().str.contains(news_q.lower(), na=False)].head(10)
                 if disp.empty:
                     st.info(f"No headlines matching **'{news_q}'**.")
+                    group_mode = False
             else:
                 disp = disp.head(50)
-            for _, row in disp.iterrows():
+
+            def _render_headline(row):
                 score = row["sentiment_score"]
-                bc = "#22c55e" if score > 0.05 else ("#ef4444" if score < -0.05 else "#475569")
-                em = "🟢" if score > 0.05 else ("🔴" if score < -0.05 else "⚪")
+                bc  = "#22c55e" if score > 0.05 else ("#ef4444" if score < -0.05 else "#475569")
+                em  = "🟢" if score > 0.05 else ("🔴" if score < -0.05 else "⚪")
                 pub = pd.to_datetime(row["published_at"]).strftime("%b %d")
                 url = row.get("url", "#") if "url" in row.index else "#"
-                link_html = f"&nbsp;<a href='{url}' target='_blank' style='color:#3b82f6;font-size:0.75rem'>Read →</a>" if url != "#" else ""
+                link_html = f"&nbsp;<a href='{url}' target='_blank' style='color:#3b82f6;font-size:0.75rem'>Read →</a>" if url and url != "#" else ""
                 st.markdown(f"""
                 <div class="hl-row" style="border-color:{bc}">
                     {em} <strong>{row['title']}</strong>{link_html}<br>
                     <span style="color:#475569;font-size:0.75rem">{pub} · {row['source']} · {score:+.3f}</span>
                 </div>
                 """, unsafe_allow_html=True)
+
+            if group_mode and not news_q.strip():
+                bullish = disp[disp["sentiment_score"] >  0.05]
+                bearish = disp[disp["sentiment_score"] < -0.05]
+                neutral = disp[(disp["sentiment_score"] >= -0.05) & (disp["sentiment_score"] <= 0.05)]
+
+                # Summary disagreement note
+                total = len(disp)
+                if total > 0:
+                    pct_b = len(bullish)/total*100
+                    pct_n = len(neutral)/total*100
+                    pct_r = len(bearish)/total*100
+                    st.markdown(f"""
+                    <div style="background:#0d1117;border:1px solid #1a2035;border-radius:8px;
+                                padding:0.7rem 1rem;margin-bottom:0.75rem;
+                                display:flex;gap:1.5rem;align-items:center">
+                        <span style="font-size:0.75rem;color:#64748b">{total} headlines</span>
+                        <span style="color:#22c55e;font-size:0.82rem;font-weight:500">🟢 {pct_b:.0f}% bullish</span>
+                        <span style="color:#94a3b8;font-size:0.82rem">⚪ {pct_n:.0f}% neutral</span>
+                        <span style="color:#ef4444;font-size:0.82rem;font-weight:500">🔴 {pct_r:.0f}% bearish</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                if not bullish.empty:
+                    st.markdown(f"**🟢 Bullish** ({len(bullish)})")
+                    for _, row in bullish.iterrows():
+                        _render_headline(row)
+                if not bearish.empty:
+                    st.markdown(f"**🔴 Bearish** ({len(bearish)})")
+                    for _, row in bearish.iterrows():
+                        _render_headline(row)
+                if not neutral.empty:
+                    st.markdown(f"**⚪ Neutral** ({len(neutral)})")
+                    for _, row in neutral.iterrows():
+                        _render_headline(row)
+            else:
+                for _, row in disp.iterrows():
+                    _render_headline(row)
 
     # ── Tab 5: Performance & Retrain ───────────────────────────────────────────
     with atab5:
