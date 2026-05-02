@@ -2,23 +2,24 @@ name: Daily model retrain + cleanup
 
 on:
   schedule:
-    # ── Market-aware schedule ──────────────────────────────────────────────────
-    # Runs at 8:00 AM ET (13:00 UTC) on weekdays — 1 hour before US market open
-    # Also catches overnight news from Asian and European markets
+    # 13:00 UTC weekdays — 1 hour before US market open (09:00 ET)
     - cron: "0 13 * * 1-5"
 
-  # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
       tickers:
-        description: "Comma-separated tickers to retrain (leave blank for all)"
+        description: "Comma-separated tickers to retrain (blank = auto batch)"
+        required: false
+        default: ""
+      batch:
+        description: "Force batch A or B (blank = auto by day of week)"
         required: false
         default: ""
 
 jobs:
   retrain:
     runs-on: ubuntu-latest
-    timeout-minutes: 30      # safety cap — free tier has 2,000 min/month
+    timeout-minutes: 90      # Batch of ~50 tickers needs up to 75 min
 
     steps:
       - name: Checkout repo
@@ -33,15 +34,28 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # Install only what the retrain script needs — skip streamlit/plotly
           pip install \
-            pandas numpy yfinance feedparser requests pytz \
-            transformers==4.53.2 tokenizers==0.21.2 torch sentencepiece tf-keras \
-            scikit-learn scipy supabase
+            pandas numpy "yfinance>=0.2.36" feedparser requests pytz \
+            "transformers==4.53.2" "tokenizers==0.21.2" torch sentencepiece tf-keras \
+            scikit-learn scipy supabase python-dotenv
+
+      - name: Debug — show structure
+        run: |
+          echo "PWD: $(pwd)"
+          ls -la
+          ls fintech-sentiment/ 2>/dev/null || echo "No fintech-sentiment subfolder — running from root"
 
       - name: Run daily retrain
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TICKERS_OVERRIDE: ${{ github.event.inputs.tickers }}
-        run: python scripts/daily_retrain.py
+          DAY_BATCH: ${{ github.event.inputs.batch }}
+        run: |
+          if [ -f "fintech-sentiment/scripts/daily_retrain.py" ]; then
+            echo "Running from fintech-sentiment subfolder"
+            cd fintech-sentiment
+          fi
+          echo "Batch: ${DAY_BATCH:-auto}"
+          echo "Working dir: $(pwd)"
+          python scripts/daily_retrain.py
