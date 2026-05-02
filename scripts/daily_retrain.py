@@ -35,17 +35,65 @@ logging.basicConfig(
 )
 logger = logging.getLogger("daily_retrain")
 
+# ── Expanded ticker universe ──────────────────────────────────────────────────
+# These are retrained every day by GitHub Actions regardless of user visits.
+# The model improves continuously for all these stocks even with zero traffic.
+# Costs: ~14 tickers × ~90s = ~21 minutes, well within 2000 min/month free quota.
+# To add more tickers, simply append here and push to GitHub.
+
+# ── Full ticker universe — top 10 per market ──────────────────────────────────
+# Defined here for reference and weekly/manual runs via TICKERS_OVERRIDE.
+# Full 100-ticker run = ~150 min, exceeds GitHub free tier (2,000 min/month).
+# Daily run uses DAILY_TICKERS (25 tickers, ~37 min) to stay within quota.
+
+ALL_TICKERS = [
+    # USA (NYSE / NASDAQ)
+    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN",
+    "META", "TSLA", "BRK-B", "AVGO", "LLY",
+    # UK (LSE — .L)
+    "SHEL.L", "HSBA.L", "ULVR.L", "BP.L", "AZN.L",
+    "GSK.L", "DGE.L", "RIO.L", "BATS.L", "BARC.L",
+    # Germany (XETRA — .DE)
+    "SAP.DE", "SIE.DE", "VOW3.DE", "MBG.DE", "ALV.DE",
+    "BAS.DE", "BMW.DE", "DTE.DE", "IFX.DE", "ADS.DE",
+    # Netherlands (Euronext Amsterdam — .AS)
+    # NXP Semiconductors trades NASDAQ (NXPI); Airbus primary listing Paris (AIR.PA)
+    "ASML.AS", "PRX.AS", "INGA.AS", "HEIA.AS", "AGN.AS",
+    "ASRNL.AS", "ARGX.AS", "RAND.AS", "NXPI", "AIR.PA",
+    # India (NSE — .NS)
+    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
+    "HINDUNILVR.NS", "BHARTIARTL.NS", "LT.NS", "SBIN.NS", "ADANIENT.NS",
+    # China / Hong Kong (HKEX — .HK)
+    # Kweichow Moutai (600519.SS) is Shanghai A-share only — replaced with BIDU
+    "0700.HK", "9988.HK", "1398.HK", "0939.HK", "1211.HK",
+    "JD", "2318.HK", "0857.HK", "3690.HK", "BIDU",
+    # Japan (TSE — .T)
+    "7203.T", "6758.T", "8306.T", "9984.T", "6861.T",
+    "7974.T", "8035.T", "6501.T", "7267.T", "8316.T",
+    # France (Euronext Paris — .PA)
+    "MC.PA", "TTE.PA", "OR.PA", "SU.PA", "AIR.PA",
+    "SAN.PA", "BNP.PA", "CS.PA", "SAF.PA", "RMS.PA",
+    # Switzerland (SIX — .SW)
+    "NESN.SW", "ROG.SW", "NOVN.SW", "UBSG.SW", "ZURN.SW",
+    "ABBN.SW", "CFR.SW", "SREN.SW", "LONN.SW", "HOLN.SW",
+    # Italy (Borsa Italiana — .MI)
+    "ENEL.MI", "ENI.MI", "RACE.MI", "ISP.MI", "UCG.MI",
+    "STLAM.MI", "PIRC.MI", "TIT.MI", "LDO.MI", "MONC.MI",
+]
+
+# ── Daily subset — stays within GitHub Actions free tier (2,000 min/month) ────
+# 25 tickers × ~90s = ~37 min/run × 22 trading days = ~820 min/month
+# Covers top 5 from USA + India + UK + Germany, plus 1 per other market
 DEFAULT_TICKERS = [
-    # USA
-    "AAPL", "MSFT", "GOOGL", "TSLA", "NVDA",
-    # India
-    "RELIANCE.NS", "TCS.NS", "INFY.NS",
-    # Europe
-    "ASML.AS", "SAP.DE", "BP.L",
-    # HK/China
-    "0700.HK", "BABA",
-    # Japan
-    "7203.T",
+    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN",              # USA top 5
+    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",  # India top 5
+    "SHEL.L", "HSBA.L", "AZN.L", "BP.L", "GSK.L",         # UK top 5
+    "SAP.DE", "SIE.DE", "ALV.DE", "BMW.DE", "BAS.DE",      # Germany top 5
+    "ASML.AS",   # Netherlands
+    "MC.PA",     # France
+    "NESN.SW",   # Switzerland
+    "0700.HK",   # China / HK
+    "7203.T",    # Japan
 ]
 
 
@@ -295,7 +343,7 @@ def main():
 
     # ── STEP 3: Cleanup ────────────────────────────────────────────────────────
     logger.info("Step 3: Running cleanup...")
-    deleted = fb.cleanup_old(keep_days=30)
+    deleted = fb.cleanup_old(keep_days=7)
     logger.info(f"Cleanup complete: {deleted} rows deleted.")
 
     # ── Summary ────────────────────────────────────────────────────────────────
