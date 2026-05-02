@@ -61,7 +61,7 @@ SELECT cron.schedule(
     $$
         DELETE FROM predictions
         WHERE retrained = true
-        AND created_at < NOW() - INTERVAL '30 days';
+        AND created_at < NOW() - INTERVAL '7 days';
     $$
 );
 
