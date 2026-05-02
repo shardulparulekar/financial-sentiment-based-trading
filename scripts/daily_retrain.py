@@ -81,20 +81,64 @@ ALL_TICKERS = [
     "STLAM.MI", "PIRC.MI", "TIT.MI", "LDO.MI", "MONC.MI",
 ]
 
-# ── Daily subset — stays within GitHub Actions free tier (2,000 min/month) ────
-# 25 tickers × ~90s = ~37 min/run × 22 trading days = ~820 min/month
-# Covers top 5 from USA + India + UK + Germany, plus 1 per other market
-DEFAULT_TICKERS = [
-    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN",              # USA top 5
-    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",  # India top 5
-    "SHEL.L", "HSBA.L", "AZN.L", "BP.L", "GSK.L",         # UK top 5
-    "SAP.DE", "SIE.DE", "ALV.DE", "BMW.DE", "BAS.DE",      # Germany top 5
-    "ASML.AS",   # Netherlands
-    "MC.PA",     # France
-    "NESN.SW",   # Switzerland
-    "0700.HK",   # China / HK
-    "7203.T",    # Japan
+# ── DEFAULT_TICKERS — full list from your specification ───────────────────────
+# Split into BATCH_A (Mon/Wed/Fri) and BATCH_B (Tue/Thu) to stay within
+# GitHub Actions free tier (2,000 min/month).
+# Each batch ~50 tickers × 90s = ~75 min/run.
+# BATCH_A: 3 runs/week × 75 min = 225 min/week × 4.3 = ~968 min/month
+# BATCH_B: 2 runs/week × 75 min = 150 min/week × 4.3 = ~645 min/month
+# Total: ~1,613 min/month — within the 2,000 min free quota.
+
+BATCH_A = [
+    # USA (NYSE / NASDAQ) — all 10
+    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN",
+    "META", "TSLA", "BRK-B", "AVGO", "LLY",
+    # India (NSE) — all 10
+    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
+    "HINDUNILVR.NS", "BHARTIARTL.NS", "LT.NS", "SBIN.NS", "ADANIENT.NS",
+    # UK (LSE) — all 10
+    "SHEL.L", "HSBA.L", "ULVR.L", "BP.L", "AZN.L",
+    "GSK.L", "DGE.L", "RIO.L", "BATS.L", "BARC.L",
+    # Netherlands (AEX) — all 8 + 2 exceptions
+    "ASML.AS", "PRX.AS", "INGA.AS", "HEIA.AS", "AGN.AS",
+    "ASRNL.AS", "ARGX.AS", "RAND.AS", "NXPI", "AIR.PA",
+    # France (Euronext Paris) — first 5
+    "MC.PA", "TTE.PA", "OR.PA", "SU.PA", "SAN.PA",
 ]
+
+BATCH_B = [
+    # Germany (XETRA) — all 10
+    "SAP.DE", "SIE.DE", "VOW3.DE", "MBG.DE", "ALV.DE",
+    "BAS.DE", "BMW.DE", "DTE.DE", "IFX.DE", "ADS.DE",
+    # France (Euronext Paris) — remaining 5
+    "BNP.PA", "CS.PA", "SAF.PA", "RMS.PA", "AIR.PA",
+    # Switzerland (SIX) — all 10
+    "NESN.SW", "ROG.SW", "NOVN.SW", "UBSG.SW", "ZURN.SW",
+    "ABBN.SW", "CFR.SW", "SREN.SW", "LONN.SW", "HOLN.SW",
+    # Italy (Borsa Italiana) — all 10
+    "ENEL.MI", "ENI.MI", "RACE.MI", "ISP.MI", "UCG.MI",
+    "STLAM.MI", "PIRC.MI", "TIT.MI", "LDO.MI", "MONC.MI",
+    # China / HK (HKEX) — all 10
+    "0700.HK", "9988.HK", "1398.HK", "0939.HK", "1211.HK",
+    "JD", "2318.HK", "0857.HK", "3690.HK", "BIDU",
+    # Japan (TSE) — all 10
+    "7203.T", "6758.T", "8306.T", "9984.T", "6861.T",
+    "7974.T", "8035.T", "6501.T", "7267.T", "8316.T",
+]
+
+# DEFAULT_TICKERS is selected by the workflow based on the day of week.
+# daily_retrain.py reads the DAY_BATCH env var set by the GitHub Actions workflow.
+import datetime as _dt
+_dow = _dt.datetime.utcnow().weekday()   # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri
+_batch_override = os.getenv("DAY_BATCH", "")
+if _batch_override == "A":
+    DEFAULT_TICKERS = BATCH_A
+elif _batch_override == "B":
+    DEFAULT_TICKERS = BATCH_B
+elif _dow in (0, 2, 4):   # Mon, Wed, Fri → Batch A
+    DEFAULT_TICKERS = BATCH_A
+else:                      # Tue, Thu → Batch B
+    DEFAULT_TICKERS = BATCH_B
 
 
 def get_tickers() -> list[str]:
