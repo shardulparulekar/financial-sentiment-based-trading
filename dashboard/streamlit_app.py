@@ -299,33 +299,59 @@ st.markdown("""
 MARKET_CONFIG = {
     "🇺🇸 USA": {
         "suffix": "", "currency": "USD", "symbol": "$", "region": "US",
-        "tickers": ["AAPL","MSFT","GOOGL","TSLA","NVDA","AMZN","META","NFLX","JPM"],
-        "names":   ["Apple","Microsoft","Google","Tesla","NVIDIA","Amazon","Meta","Netflix","JPMorgan"],
+        "tickers": ["NVDA","AAPL","MSFT","GOOGL","AMZN","META","TSLA","BRK-B","AVGO","LLY"],
+        "names":   ["NVIDIA","Apple","Microsoft","Alphabet","Amazon","Meta","Tesla","Berkshire Hathaway","Broadcom","Eli Lilly"],
     },
     "🇮🇳 India (NSE)": {
         "suffix": ".NS", "currency": "INR", "symbol": "₹", "region": "IN",
-        "tickers": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","WIPRO","TATAMOTORS","ZOMATO","SBIN"],
-        "names":   ["Reliance","TCS","Infosys","HDFC Bank","ICICI Bank","Wipro","Tata Motors","Zomato","SBI"],
+        "tickers": ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","BHARTIARTL","LT","SBIN","ADANIENT"],
+        "names":   ["Reliance","TCS","HDFC Bank","Infosys","ICICI Bank","Hindustan Unilever","Bharti Airtel","L&T","SBI","Adani Enterprises"],
     },
     "🇨🇳 China / HK": {
         "suffix": ".HK", "currency": "HKD", "symbol": "HK$", "region": "HK",
-        "tickers": ["0700","9988","3690","1810"], "names": ["Tencent","Alibaba HK","Meituan","Xiaomi"],
-        "us_adrs": ["BABA","PDD","JD","BIDU","NIO"],
-        "adr_names": ["Alibaba","Pinduoduo","JD.com","Baidu","NIO"],
+        "tickers":   ["0700","9988","1398","0939","1211","2318","0857","3690"],
+        "names":     ["Tencent","Alibaba HK","ICBC","CCB","BYD","Ping An","PetroChina","Meituan"],
+        "us_adrs":   ["JD","BIDU","PDD","NIO","BABA"],
+        "adr_names": ["JD.com","Baidu","Pinduoduo","NIO","Alibaba"],
     },
     "🇯🇵 Japan": {
         "suffix": ".T", "currency": "JPY", "symbol": "¥", "region": "JP",
-        "tickers": ["7203","6758","9984","6861"], "names": ["Toyota","Sony","SoftBank","Keyence"],
+        "tickers": ["7203","6758","8306","9984","6861","7974","8035","6501","7267","8316"],
+        "names":   ["Toyota","Sony","Mitsubishi UFJ","SoftBank","Keyence","Nintendo","Tokyo Electron","Hitachi","Honda","SMFG"],
     },
 }
 
 EU_EXCHANGES = {
-    "🇳🇱 Amsterdam": {"suffix":".AS","currency":"EUR","symbol":"€","tickers":["ASML","PHIA","INGA","HEIA","ADYEN"],"names":["ASML","Philips","ING","Heineken","Adyen"]},
-    "🇩🇪 Frankfurt": {"suffix":".DE","currency":"EUR","symbol":"€","tickers":["SAP","BMW","SIE","VOW3","ALV","MBG"],"names":["SAP","BMW","Siemens","Volkswagen","Allianz","Mercedes"]},
-    "🇫🇷 Paris":     {"suffix":".PA","currency":"EUR","symbol":"€","tickers":["MC","AIR","OR","TTE","SAN"],"names":["LVMH","Airbus","L'Oréal","TotalEnergies","Sanofi"]},
-    "🇬🇧 London":    {"suffix":".L","currency":"GBP","symbol":"£","tickers":["HSBA","SHEL","BP","AZN","GSK"],"names":["HSBC","Shell","BP","AstraZeneca","GSK"]},
-    "🇨🇭 Zurich":    {"suffix":".SW","currency":"CHF","symbol":"CHF ","tickers":["NESN","NOVN","ROG","UBSG"],"names":["Nestlé","Novartis","Roche","UBS"]},
-    "🇮🇹 Milan":     {"suffix":".MI","currency":"EUR","symbol":"€","tickers":["RACE","UCG","ENI","ENEL"],"names":["Ferrari","UniCredit","ENI","Enel"]},
+    "🇳🇱 Amsterdam": {
+        "suffix": ".AS", "currency": "EUR", "symbol": "€",
+        "tickers": ["ASML","PRX","INGA","HEIA","AGN","ASRNL","ARGX","RAND"],
+        "names":   ["ASML","Prosus","ING","Heineken","Aegon","ASR Nederland","Argenx","Randstad"],
+    },
+    "🇩🇪 Frankfurt": {
+        "suffix": ".DE", "currency": "EUR", "symbol": "€",
+        "tickers": ["SAP","SIE","VOW3","MBG","ALV","BAS","BMW","DTE","IFX","ADS"],
+        "names":   ["SAP","Siemens","Volkswagen","Mercedes-Benz","Allianz","BASF","BMW","Deutsche Telekom","Infineon","Adidas"],
+    },
+    "🇫🇷 Paris": {
+        "suffix": ".PA", "currency": "EUR", "symbol": "€",
+        "tickers": ["MC","TTE","OR","SU","AIR","SAN","BNP","CS","SAF","RMS"],
+        "names":   ["LVMH","TotalEnergies","L'Oréal","Schneider Electric","Airbus","Sanofi","BNP Paribas","AXA","Safran","Hermès"],
+    },
+    "🇬🇧 London": {
+        "suffix": ".L", "currency": "GBP", "symbol": "£",
+        "tickers": ["SHEL","HSBA","ULVR","BP","AZN","GSK","DGE","RIO","BATS","BARC"],
+        "names":   ["Shell","HSBC","Unilever","BP","AstraZeneca","GSK","Diageo","Rio Tinto","British American Tobacco","Barclays"],
+    },
+    "🇨🇭 Zurich": {
+        "suffix": ".SW", "currency": "CHF", "symbol": "CHF ",
+        "tickers": ["NESN","ROG","NOVN","UBSG","ZURN","ABBN","CFR","SREN","LONN","HOLN"],
+        "names":   ["Nestlé","Roche","Novartis","UBS","Zurich Insurance","ABB","Richemont","Swiss Re","Lonza","Holcim"],
+    },
+    "🇮🇹 Milan": {
+        "suffix": ".MI", "currency": "EUR", "symbol": "€",
+        "tickers": ["ENEL","ENI","RACE","ISP","UCG","STLAM","PIRC","TIT","LDO","MONC"],
+        "names":   ["Enel","Eni","Ferrari","Intesa Sanpaolo","UniCredit","Stellantis","Pirelli","Telecom Italia","Leonardo","Moncler"],
+    },
 }
 
 WORLD_INDICES = [
@@ -334,6 +360,7 @@ WORLD_INDICES = [
     {"name": "Nikkei 225", "ticker": "^N225",  "symbol": "¥",   "region": "🇯🇵"},
     {"name": "Sensex",     "ticker": "^BSESN", "symbol": "₹",   "region": "🇮🇳"},
     {"name": "DAX",        "ticker": "^GDAXI", "symbol": "€",   "region": "🇩🇪"},
+    {"name": "Hang Seng",  "ticker": "^HSI",   "symbol": "HK$", "region": "🇭🇰"},
 ]
 
 # Market hours per index — (open_hour, close_hour) in local time, timezone string
@@ -343,6 +370,7 @@ MARKET_HOURS = {
     "^N225":  {"tz": "Asia/Tokyo",        "open": (9,  0),  "close": (15, 30), "label": "JST"},
     "^BSESN": {"tz": "Asia/Kolkata",      "open": (9,  15), "close": (15, 30), "label": "IST"},
     "^GDAXI": {"tz": "Europe/Berlin",     "open": (9,  0),  "close": (17, 30), "label": "CET/CEST"},
+    "^HSI":   {"tz": "Asia/Hong_Kong",    "open": (9,  30), "close": (16, 0),  "label": "HKT"},
 }
 
 
@@ -823,9 +851,12 @@ if st.session_state.active_tab == "home":
     # ── World indices ──────────────────────────────────────────────────────────
     st.markdown("### 🌍 Global markets")
 
-    idx_cols = st.columns(len(WORLD_INDICES))
-    for col, idx in zip(idx_cols, WORLD_INDICES):
-        with col:
+    # Two rows of 3 for 6 indices — cleaner than one cramped row of 6
+    idx_rows = [WORLD_INDICES[:3], WORLD_INDICES[3:]]
+    for idx_row in idx_rows:
+        idx_cols = st.columns(3)
+        for col, idx in zip(idx_cols, idx_row):
+          with col:
             try:
                 df_idx = load_index_data(idx["ticker"])
                 if df_idx.empty:
