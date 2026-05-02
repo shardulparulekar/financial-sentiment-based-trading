@@ -58,7 +58,9 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 MAX_ROWS              = 10_000
-KEEP_DAYS             = 30
+KEEP_DAYS             = 7      # Daily retraining means rows are incorporated the next day;
+                               # 7 days is enough for the dashboard accuracy trend chart.
+                               # At 28 tickers × 5 trading days = ~140 rows steady state.
 AUTO_CLEAN            = True
 MIN_CONFIDENCE_DELTA  = 0.02   # update if new confidence is this much higher
 MIN_SENTIMENT_DELTA   = 0.05   # update if sentiment shifted by this much
