@@ -2,8 +2,11 @@ name: Daily model retrain + cleanup
 
 on:
   schedule:
-    # 13:00 UTC weekdays — 1 hour before US market open (09:00 ET)
-    - cron: "0 13 * * 1-5"
+    # Runs every day at 13:00 UTC including weekends.
+    # Weekdays: fresh price data + fresh news → full retrain
+    # Weekends: Friday EOD prices + weekend news → sentiment-updated signal
+    # This ensures Monday's prediction incorporates all weekend news.
+    - cron: "0 13 * * *"
 
   workflow_dispatch:
     inputs:
@@ -19,7 +22,7 @@ on:
 jobs:
   retrain:
     runs-on: ubuntu-latest
-    timeout-minutes: 90      # Batch of ~50 tickers needs up to 75 min
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repo
