@@ -308,11 +308,33 @@ class FeedbackLogger:
             return False
 
     def cleanup_old(self, keep_days=KEEP_DAYS) -> int:
+        """
+        Two-pass cleanup:
+        Pass 1: delete retrained=true rows older than keep_days (normal)
+        Pass 2: delete retrained=false rows older than keep_days*3 (orphan)
+                Orphans are rows whose actuals were never resolved, or
+                dashboard-created rows for tickers not in the daily batch.
+                Kept 3x longer in case actuals arrive late, then purged.
+        """
         try:
-            client  = _get_client()
-            deleted = self._auto_cleanup(client, keep_days=keep_days)
-            logger.info(f"Manual cleanup: deleted {deleted} rows.")
-            return deleted
+            client   = _get_client()
+            deleted1 = self._auto_cleanup(client, keep_days=keep_days)
+
+            # Orphan cleanup
+            orphan_cutoff = (datetime.utcnow() - timedelta(days=keep_days * 3)).isoformat()
+            result = (
+                client.table(self.TABLE)
+                .delete()
+                .eq("retrained", False)
+                .lt("created_at", orphan_cutoff)
+                .execute()
+            )
+            deleted2 = len(result.data) if result.data else 0
+            if deleted2:
+                logger.info(f"Orphan cleanup: deleted {deleted2} old unretrained rows (>{keep_days*3} days).")
+
+            logger.info(f"Total cleanup: {deleted1 + deleted2} rows deleted.")
+            return deleted1 + deleted2
         except Exception as e:
             logger.warning(f"cleanup_old failed: {e}")
             return 0
