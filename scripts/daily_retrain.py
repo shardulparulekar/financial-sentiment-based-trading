@@ -129,15 +129,15 @@ BATCH_B = [
 # DEFAULT_TICKERS is selected by the workflow based on the day of week.
 # daily_retrain.py reads the DAY_BATCH env var set by the GitHub Actions workflow.
 import datetime as _dt
-_dow = _dt.datetime.utcnow().weekday()   # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri
+_dow = _dt.datetime.utcnow().weekday()   # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
 _batch_override = os.getenv("DAY_BATCH", "")
 if _batch_override == "A":
     DEFAULT_TICKERS = BATCH_A
 elif _batch_override == "B":
     DEFAULT_TICKERS = BATCH_B
-elif _dow in (0, 2, 4):   # Mon, Wed, Fri → Batch A
+elif _dow in (0, 2, 4, 5):   # Mon, Wed, Fri, Sat → Batch A
     DEFAULT_TICKERS = BATCH_A
-else:                      # Tue, Thu → Batch B
+else:                          # Tue, Thu, Sun → Batch B
     DEFAULT_TICKERS = BATCH_B
 
 
@@ -192,12 +192,16 @@ def fill_missing_actuals(fb) -> int:
         for ticker, rows in by_ticker.items():
             try:
                 # Fetch last 10 days of price data for this ticker
-                # Add 2 days to end to ensure today's data is included
-                # (yfinance end is exclusive, and we may be running on Monday
-                #  needing Friday's data which is the "next day" after Thursday's prediction)
+                # end = today + 2 ensures the most recent closed trading day
+                # is always included (yfinance end is exclusive).
+                # For weekend runs: Saturday/Sunday have no trading data —
+                # the price_map will simply not contain those dates, and the
+                # walk-forward loop will correctly skip to the next trading day.
+                # Friday's close is the last available and is used for
+                # predictions made on Friday, Saturday, or Sunday.
                 df = yf.download(
                     ticker,
-                    start=(datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%d"),
+                    start=(datetime.utcnow() - timedelta(days=20)).strftime("%Y-%m-%d"),
                     end=(datetime.utcnow() + timedelta(days=2)).strftime("%Y-%m-%d"),
                     progress=False,
                     auto_adjust=True,
@@ -320,11 +324,22 @@ def retrain_ticker(ticker: str, fb) -> dict:
         acc     = results["summary"]["Random Forest"]["accuracy_mean"]
 
         # Log today's prediction
+        # On weekends, stock_df.iloc[-1] is still Friday's close — correct.
+        # We log trade_date as today so the prediction is linked to
+        # the day it was made (weekend news context included).
+        import datetime as _dt_mod
+        _today    = _dt_mod.date.today()
+        _weekday  = _today.weekday()   # 5=Sat, 6=Sun
+        if _weekday >= 5:
+            # Weekend — use today's date as trade_date but Friday's price
+            trade_date = _today.isoformat()
+        else:
+            trade_date = str(stock_df.iloc[-1]["date"])
+
         X_latest   = X.iloc[[-1]]
         signal     = int(model.predict(X_latest)[0])
         confidence = float(max(model.predict_proba(X_latest)[0]))
         sentiment  = float(daily["mean_score"].iloc[-1]) if not daily.empty else 0.0
-        trade_date = str(stock_df.iloc[-1]["date"])
 
         fb.log_prediction(
             ticker=ticker, trade_date=trade_date,
