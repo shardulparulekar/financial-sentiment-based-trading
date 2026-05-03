@@ -679,6 +679,7 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
         "daily": daily, "features": features, "X": X,
         "report": report, "signal": signal, "confidence": confidence,
         "model": model, "results": results,
+        "model_info": pipe.model_info() if hasattr(pipe, "model_info") else {},
     }
 
 
@@ -1381,6 +1382,24 @@ else:
 
     with atab3:
         import plotly.express as px
+
+        # Show which sentiment model is active
+        try:
+            from src.sentiment_model import FINBERT_MODEL_PRIMARY, FINBERT_MODEL_FALLBACK
+            info = data.get("model_info", {})
+            active_model = info.get("model_name", FINBERT_MODEL_PRIMARY)
+            is_fallback  = active_model == FINBERT_MODEL_FALLBACK
+            if is_fallback:
+                st.warning(
+                    f"⚠️ **Fallback model active** — using `{FINBERT_MODEL_FALLBACK}` (~110MB) "
+                    f"instead of the primary FinBERT model due to memory constraints. "
+                    f"Sentiment accuracy may be slightly lower."
+                )
+            else:
+                st.success(f"✅ Primary model active — `{active_model}`")
+        except Exception:
+            pass
+
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown("#### Feature importance")
