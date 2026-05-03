@@ -34,15 +34,23 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# HuggingFace model identifier — ProsusAI's FinBERT is the standard choice
-FINBERT_MODEL = "ProsusAI/finbert"
+# Primary model — ProsusAI/finbert (~440MB, ~1.5GB RAM when loaded)
+FINBERT_MODEL_PRIMARY  = "ProsusAI/finbert"
+
+# Fallback model — yiyanghkust/finbert-tone (~110MB, ~400MB RAM)
+# Used automatically if the primary model fails to load (e.g. OOM on Streamlit Cloud)
+# Same financial domain training, slightly lower accuracy but far lighter.
+FINBERT_MODEL_FALLBACK = "yiyanghkust/finbert-tone"
+
+# Active model — set at runtime, can be overridden via env var
+import os as _os
+FINBERT_MODEL = _os.getenv("FINBERT_MODEL", FINBERT_MODEL_PRIMARY)
 
 # FinBERT was trained on sentences up to 512 tokens.
-# Most headlines are well under this, but we truncate to be safe.
 MAX_TOKEN_LENGTH = 512
 
 # How many headlines to send to the model at once.
-# Larger = faster but uses more RAM. 32 is safe for most laptops.
+# Smaller batch on fallback model to reduce peak RAM usage.
 DEFAULT_BATCH_SIZE = 32
 
 
@@ -103,47 +111,93 @@ class SentimentPipeline:
 
     def _load(self):
         """
-        Load FinBERT from HuggingFace on first use.
-        First run downloads ~440MB and caches to ~/.cache/huggingface/.
-        Subsequent runs load from cache instantly.
+        Load FinBERT from HuggingFace on first use, with automatic fallback.
+
+        Tries primary model (ProsusAI/finbert, ~440MB) first.
+        If it fails with OOM or any other error, automatically falls back to
+        the lighter model (yiyanghkust/finbert-tone, ~110MB).
+
+        This makes the app resilient on memory-constrained environments like
+        Streamlit Community Cloud free tier (~1GB RAM limit).
         """
         if self._pipeline is not None:
             return
-
-        logger.info(f"Loading FinBERT ({self.model_name}) on {self.device} ...")
-        logger.info("First run will download ~440MB — this is a one-time step.")
 
         from transformers import (
             pipeline,
             BertForSequenceClassification,
             BertTokenizer,
+            AutoModelForSequenceClassification,
+            AutoTokenizer,
             logging as hf_logging,
         )
 
         hf_logging.set_verbosity_error()
-
         device_index = -1 if self.device == "cpu" else 0
 
-        # Explicitly load PyTorch classes to bypass TF auto-detection.
-        # use_safetensors=True bypasses torch.load entirely, avoiding
-        # CVE-2025-32434 without needing to upgrade PyTorch to 2.6+.
-        model     = BertForSequenceClassification.from_pretrained(
-            self.model_name,
-            use_safetensors=True,
-        )
-        tokenizer = BertTokenizer.from_pretrained(self.model_name)
+        models_to_try = [self.model_name]
+        # Always append fallback if not already the primary
+        if self.model_name != FINBERT_MODEL_FALLBACK:
+            models_to_try.append(FINBERT_MODEL_FALLBACK)
 
-        self._pipeline = pipeline(
-            task       = "text-classification",
-            model      = model,
-            tokenizer  = tokenizer,
-            device     = device_index,
-            truncation = True,
-            max_length = MAX_TOKEN_LENGTH,
-            top_k      = None,
+        last_error = None
+        for attempt, model_id in enumerate(models_to_try):
+            try:
+                if attempt == 0:
+                    logger.info(f"Loading primary model: {model_id} (~440MB) ...")
+                else:
+                    logger.warning(
+                        f"Primary model failed ({last_error}). "
+                        f"Falling back to lighter model: {model_id} (~110MB)..."
+                    )
+                    self.batch_size = 16   # reduce batch size on fallback
+
+                # use_safetensors=True bypasses torch.load, avoiding CVE-2025-32434
+                try:
+                    model     = BertForSequenceClassification.from_pretrained(
+                        model_id, use_safetensors=True,
+                    )
+                    tokenizer = BertTokenizer.from_pretrained(model_id)
+                except Exception:
+                    # Fallback model may not have safetensors — try without
+                    model     = AutoModelForSequenceClassification.from_pretrained(model_id)
+                    tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+                self._pipeline = pipeline(
+                    task       = "text-classification",
+                    model      = model,
+                    tokenizer  = tokenizer,
+                    device     = device_index,
+                    truncation = True,
+                    max_length = MAX_TOKEN_LENGTH,
+                    top_k      = None,
+                )
+
+                self.model_name = model_id   # record which model actually loaded
+                logger.info(f"Model loaded: {model_id} ({'primary' if attempt == 0 else 'FALLBACK'})")
+                return   # success — stop trying
+
+            except Exception as e:
+                last_error = str(e)
+                logger.error(f"Failed to load {model_id}: {e}")
+                self._pipeline = None
+                continue
+
+        # Both models failed
+        raise RuntimeError(
+            f"Could not load any sentiment model. "
+            f"Last error: {last_error}. "
+            f"Check available RAM and HuggingFace connectivity."
         )
 
-        logger.info("FinBERT loaded and ready.")
+    def model_info(self) -> dict:
+        """Return info about the currently loaded model."""
+        return {
+            "model_name":  self.model_name,
+            "is_fallback": self.model_name == FINBERT_MODEL_FALLBACK,
+            "device":      self.device,
+            "batch_size":  self.batch_size,
+        }
 
     # ── Scoring ────────────────────────────────────────────────────────────────
 
