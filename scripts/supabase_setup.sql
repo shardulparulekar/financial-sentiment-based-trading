@@ -55,13 +55,25 @@ CREATE POLICY "app_delete" ON predictions
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- Pass 1: delete incorporated rows older than 7 days
 SELECT cron.schedule(
-    'daily-predictions-cleanup',          -- job name
-    '0 2 * * *',                          -- 2:00 AM UTC every day
+    'daily-predictions-cleanup',
+    '0 2 * * *',
     $$
         DELETE FROM predictions
         WHERE retrained = true
         AND created_at < NOW() - INTERVAL '7 days';
+    $$
+);
+
+-- Pass 2: delete orphan rows (retrained=false, never resolved) older than 21 days
+SELECT cron.schedule(
+    'daily-orphan-cleanup',
+    '0 2 * * *',
+    $$
+        DELETE FROM predictions
+        WHERE retrained = false
+        AND created_at < NOW() - INTERVAL '21 days';
     $$
 );
 
