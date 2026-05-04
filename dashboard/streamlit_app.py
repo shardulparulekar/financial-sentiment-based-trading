@@ -561,13 +561,49 @@ def get_market_status() -> dict:
             "next_open": next_open, "note": note}
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_index_data(ticker: str) -> pd.DataFrame:
+    """
+    Download 35 days of closing prices for a world index.
+
+    TTL is 1 hour (3600s) — indices don't need more frequent updates on the
+    homepage, and the longer cache dramatically reduces how often we hit Yahoo.
+
+    Retries up to 3 times with exponential back-off (1s, 2s, 4s) to handle
+    Yahoo Finance rate-limit bursts (YFRateLimitError) that occur when all 6
+    world-index cards load simultaneously on a cold start.  On permanent
+    failure we return an empty DataFrame so the caller's except-branch can
+    show a graceful "Data unavailable" card instead of a traceback.
+    """
+    import time
+    import random
     import yfinance as yf
+
     end   = datetime.today()
     start = end - timedelta(days=35)
-    df = yf.download(ticker, start=start.strftime("%Y-%m-%d"),
-                     end=end.strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
+    df    = pd.DataFrame()
+
+    for attempt in range(3):
+        try:
+            df = yf.download(
+                ticker,
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                progress=False,
+                auto_adjust=True,
+            )
+            if not df.empty:
+                break          # success — stop retrying
+        except Exception:
+            pass               # rate-limit or network error — wait then retry
+
+        # Exponential back-off: 1s, 2s, 4s  +  small random jitter
+        if attempt < 2:
+            time.sleep(2 ** attempt + random.uniform(0.1, 0.9))
+
+    if df.empty:
+        return pd.DataFrame()  # caller handles this gracefully
+
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df[["Close"]].dropna()
