@@ -324,8 +324,11 @@ MARKET_CONFIG = {
 EU_EXCHANGES = {
     "🇳🇱 Amsterdam": {
         "suffix": ".AS", "currency": "EUR", "symbol": "€",
-        "tickers": ["ASML","PRX","INGA","HEIA","AGN","ASRNL","ARGX","RAND"],
-        "names":   ["ASML","Prosus","ING","Heineken","Aegon","ASR Nederland","Argenx","Randstad"],
+        "tickers": ["ASML","PRX","INGA","HEIA","AGN","ASRNL","RAND"],
+        "names":   ["ASML","Prosus","ING","Heineken","Aegon","ASR Nederland","Randstad"],
+        # argenx primary listing moved to Nasdaq — ticker is plain ARGX (no .AS suffix)
+        "us_exceptions":      ["ARGX"],
+        "us_exception_names": ["Argenx"],
     },
     "🇩🇪 Frankfurt": {
         "suffix": ".DE", "currency": "EUR", "symbol": "€",
@@ -442,7 +445,12 @@ def get_market_open_status(ticker: str) -> dict:
 
 def resolve_ticker(display: str, market: str, exchange: str | None = None) -> str:
     if market == "🇪🇺 Europe" and exchange:
-        return display + EU_EXCHANGES[exchange]["suffix"]
+        ex_cfg = EU_EXCHANGES[exchange]
+        # Some tickers in a European exchange config trade on US markets (e.g. ARGX on Nasdaq)
+        # — they must NOT get the local suffix appended.
+        if display in ex_cfg.get("us_exceptions", []):
+            return display
+        return display + ex_cfg["suffix"]
     if market == "🇨🇳 China / HK":
         if display in MARKET_CONFIG[market].get("us_adrs", []):
             return display
@@ -462,7 +470,9 @@ def get_currency(market: str, exchange: str | None = None) -> tuple[str, str]:
 def get_company_name(display_ticker: str, market: str, exchange: str | None = None) -> str:
     if market == "🇪🇺 Europe" and exchange:
         ex = EU_EXCHANGES[exchange]
-        for t, n in zip(ex["tickers"], ex["names"]):
+        all_t = ex["tickers"] + ex.get("us_exceptions", [])
+        all_n = ex["names"]   + ex.get("us_exception_names", [])
+        for t, n in zip(all_t, all_n):
             if t == display_ticker:
                 return n
         return display_ticker
@@ -840,9 +850,11 @@ if st.session_state.active_tab == "home":
                              key="home_ticker_empty", disabled=True)
                 display_ticker = ""
             elif market == "🇪🇺 Europe" and exchange:
-                ex_cfg = EU_EXCHANGES[exchange]
+                ex_cfg  = EU_EXCHANGES[exchange]
+                all_t   = ex_cfg["tickers"] + ex_cfg.get("us_exceptions", [])
+                all_n   = ex_cfg["names"]   + ex_cfg.get("us_exception_names", [])
                 ticker_opts = ["— select —"] + [
-                    f"{t}  —  {n}" for t, n in zip(ex_cfg["tickers"], ex_cfg["names"])
+                    f"{t}  —  {n}" for t, n in zip(all_t, all_n)
                 ]
                 sel = st.selectbox("Ticker", ticker_opts, key="home_eu_ticker")
                 display_ticker = "" if sel == "— select —" else sel.split("  —  ")[0].strip()
