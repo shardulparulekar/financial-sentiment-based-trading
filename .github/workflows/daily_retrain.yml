@@ -8,6 +8,16 @@ on:
     # This ensures Monday's prediction incorporates all weekend news.
     - cron: "0 13 * * *"
 
+  # Keeps the workflow "active" so GitHub doesn't silently drop scheduled runs.
+  # Any push to main resets the inactivity clock.
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/**"
+      - "src/**"
+      - "requirements.txt"
+
   workflow_dispatch:
     inputs:
       tickers:
@@ -19,8 +29,19 @@ on:
         required: false
         default: ""
 
+# Prevent multiple runs overlapping — if a new run starts, cancel the old one.
+# This protects against schedule pile-ups after GitHub delays.
+concurrency:
+  group: daily-retrain
+  cancel-in-progress: true
+
 jobs:
   retrain:
+    # Skip the retrain logic on push events — push trigger is only here
+    # to keep the workflow active and prevent GitHub from disabling it.
+    # The actual retrain only runs on schedule or manual dispatch.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
