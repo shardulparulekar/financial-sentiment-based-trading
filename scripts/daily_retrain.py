@@ -59,7 +59,7 @@ ALL_TICKERS = [
     # Netherlands (Euronext Amsterdam — .AS)
     # NXP Semiconductors trades NASDAQ (NXPI); Airbus primary listing Paris (AIR.PA)
     "ASML.AS", "PRX.AS", "INGA.AS", "HEIA.AS", "AGN.AS",
-    "ASRNL.AS", "ARGX.AS", "RAND.AS", "NXPI", "AIR.PA",
+    "ASRNL.AS", "ARGX", "RAND.AS", "NXPI", "AIR.PA",
     # India (NSE — .NS)
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "HINDUNILVR.NS", "BHARTIARTL.NS", "LT.NS", "SBIN.NS", "ADANIENT.NS",
@@ -101,7 +101,7 @@ BATCH_A = [
     "GSK.L", "DGE.L", "RIO.L", "BATS.L", "BARC.L",
     # Netherlands (AEX) — all 8 + 2 exceptions
     "ASML.AS", "PRX.AS", "INGA.AS", "HEIA.AS", "AGN.AS",
-    "ASRNL.AS", "ARGX.AS", "RAND.AS", "NXPI", "AIR.PA",
+    "ASRNL.AS", "ARGX", "RAND.AS", "NXPI", "AIR.PA",
     # France (Euronext Paris) — first 5
     "MC.PA", "TTE.PA", "OR.PA", "SU.PA", "SAN.PA",
 ]
