@@ -29,11 +29,14 @@ on:
         required: false
         default: ""
 
-# Prevent multiple runs overlapping — if a new run starts, cancel the old one.
-# This protects against schedule pile-ups after GitHub delays.
+# Prevent multiple runs overlapping — if a new run starts, let the old one finish.
+# cancel-in-progress: false is intentional: the schedule fires once per day and
+# should never be cancelled by a push-triggered keepalive run.  Setting this to
+# true was causing scheduled runs to be silently dropped when a push event
+# coincided with the schedule window.
 concurrency:
   group: daily-retrain
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   retrain:
