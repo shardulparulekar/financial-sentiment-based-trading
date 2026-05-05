@@ -283,6 +283,12 @@ class FeedbackLogger:
         trade_date available in the table.  Used by the home page to show a
         pre-computed signal grid without running the full pipeline.
 
+        NOTE: we do NOT filter by retrained=True here.  That flag is internal
+        bookkeeping for the batch job — a freshly logged prediction with
+        retrained=False is equally valid for display on the home page.
+        Filtering by it was the cause of seeing only 1 card (the one row that
+        happened to have been marked retrained=True in the test run).
+
         Returns columns:
             ticker, trade_date, predicted, confidence, sentiment, updated_at
         Sorted by confidence descending.
@@ -290,11 +296,10 @@ class FeedbackLogger:
         try:
             client = _get_client()
 
-            # Step 1: find the latest trade_date that has retrained rows
+            # Step 1: find the most recent trade_date in the whole table
             latest = (
                 client.table(self.TABLE)
                 .select("trade_date")
-                .eq("retrained", True)
                 .order("trade_date", desc=True)
                 .limit(1)
                 .execute()
@@ -303,12 +308,11 @@ class FeedbackLogger:
                 return pd.DataFrame()
             latest_date = latest.data[0]["trade_date"]
 
-            # Step 2: fetch all retrained rows for that date, sorted by confidence
+            # Step 2: fetch all rows for that date, sorted by confidence desc
             result = (
                 client.table(self.TABLE)
                 .select("ticker,trade_date,predicted,confidence,sentiment,updated_at")
                 .eq("trade_date", latest_date)
-                .eq("retrained", True)
                 .order("confidence", desc=True)
                 .limit(n)
                 .execute()
