@@ -277,6 +277,57 @@ class FeedbackLogger:
             logger.warning(f"get_unretrained failed: {e}")
             return pd.DataFrame()
 
+    def get_top_signals(self, n: int = 10) -> pd.DataFrame:
+        """
+        Return the top-N highest-confidence predictions from the most recent
+        trade_date available in the table.  Used by the home page to show a
+        pre-computed signal grid without running the full pipeline.
+
+        Returns columns:
+            ticker, trade_date, predicted, confidence, sentiment, updated_at
+        Sorted by confidence descending.
+        """
+        try:
+            client = _get_client()
+
+            # Step 1: find the latest trade_date that has retrained rows
+            latest = (
+                client.table(self.TABLE)
+                .select("trade_date")
+                .eq("retrained", True)
+                .order("trade_date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if not latest.data:
+                return pd.DataFrame()
+            latest_date = latest.data[0]["trade_date"]
+
+            # Step 2: fetch all retrained rows for that date, sorted by confidence
+            result = (
+                client.table(self.TABLE)
+                .select("ticker,trade_date,predicted,confidence,sentiment,updated_at")
+                .eq("trade_date", latest_date)
+                .eq("retrained", True)
+                .order("confidence", desc=True)
+                .limit(n)
+                .execute()
+            )
+            if not result.data:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(result.data)
+            df["trade_date"] = pd.to_datetime(df["trade_date"])
+            df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True)
+            df["confidence"] = df["confidence"].astype(float)
+            df["sentiment"]  = df["sentiment"].astype(float)
+            return df
+        except EnvironmentError:
+            return pd.DataFrame()
+        except Exception as e:
+            logger.warning(f"get_top_signals failed: {e}")
+            return pd.DataFrame()
+
     def table_stats(self) -> dict:
         """Row counts for dashboard health display."""
         try:
