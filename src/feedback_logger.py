@@ -381,7 +381,10 @@ class FeedbackLogger:
             deleted1 = self._auto_cleanup(client, keep_days=keep_days)
 
             # Orphan cleanup — retrained=False rows older than keep_days+3 days
-            orphan_cutoff = (datetime.utcnow() - timedelta(days=keep_days + 3)).isoformat()
+            # Use explicit UTC suffix (+00:00) so Supabase compares correctly
+            # against the timezone-aware created_at column. Without it, a naive
+            # datetime string can silently fail the .lt() filter in PostgREST.
+            orphan_cutoff = (datetime.utcnow() - timedelta(days=keep_days + 3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
             result = (
                 client.table(self.TABLE)
                 .delete()
@@ -427,7 +430,7 @@ class FeedbackLogger:
     @staticmethod
     def _auto_cleanup(client, keep_days=KEEP_DAYS) -> int:
         try:
-            cutoff = (datetime.utcnow() - timedelta(days=keep_days)).isoformat()
+            cutoff = (datetime.utcnow() - timedelta(days=keep_days)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
             result = (
                 client.table(FeedbackLogger.TABLE)
                 .delete()
