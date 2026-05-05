@@ -241,9 +241,15 @@ def fill_missing_actuals(fb) -> int:
                     trade_dt = datetime.strptime(td, "%Y-%m-%d").date()
                     next_day = trade_dt + timedelta(days=1)
 
-                    # Walk forward up to 5 days to find next trading day
+                    # Walk forward up to 10 calendar days to find the next
+                    # trading day.  5 was too short for extended holiday windows
+                    # such as Japan's Golden Week (May 1-6) where the next
+                    # trading day can be 6+ calendar days away.  10 days safely
+                    # covers any public holiday sequence across all 10 markets
+                    # we track (JP, IN, HK, EU, US) without risking picking up
+                    # a price that's too far in the future to be meaningful.
                     actual = None
-                    for offset in range(5):
+                    for offset in range(10):
                         check = (next_day + timedelta(days=offset)).strftime("%Y-%m-%d")
                         if check in price_map:
                             actual = price_map[check]
