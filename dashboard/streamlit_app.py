@@ -485,6 +485,36 @@ def get_company_name(display_ticker: str, market: str, exchange: str | None = No
     return display_ticker
 
 
+def resolve_market_for_ticker(full_ticker: str) -> tuple[str, str | None, str, str]:
+    """
+    Given a full ticker (e.g. 'AAPL', 'RELIANCE.NS', 'ASML.AS', '7203.T'),
+    return (market, exchange, display_ticker, company_name).
+    Falls back to (USA, None, full_ticker, full_ticker) if not found.
+    """
+    # EU exchanges first — suffix lookup
+    for ex_name, ex_cfg in EU_EXCHANGES.items():
+        sfx = ex_cfg["suffix"]
+        # Normal suffixed tickers
+        all_t = ex_cfg["tickers"] + ex_cfg.get("us_exceptions", [])
+        all_n = ex_cfg["names"]   + ex_cfg.get("us_exception_names", [])
+        for t, n in zip(all_t, all_n):
+            resolved = t if t in ex_cfg.get("us_exceptions", []) else t + sfx
+            if full_ticker.upper() == resolved.upper():
+                return "🇪🇺 Europe", ex_name, t, n
+    # Non-EU MARKET_CONFIG markets
+    for mkt_name, cfg in MARKET_CONFIG.items():
+        sfx      = cfg.get("suffix", "")
+        all_t    = cfg["tickers"] + cfg.get("us_adrs", [])
+        all_n    = cfg["names"]   + cfg.get("adr_names", [])
+        for t, n in zip(all_t, all_n):
+            resolved = t + sfx if sfx else t
+            if full_ticker.upper() == resolved.upper():
+                return mkt_name, None, t, n
+    # Fallback — treat as US
+    display = full_ticker.split(".")[0]
+    return "🇺🇸 USA", None, display, display
+
+
 def validate_custom(raw: str, market: str, exchange: str | None = None) -> tuple[bool, str, str]:
     raw = raw.strip().upper()
     entered_suffix = ("." + raw.rsplit(".", 1)[-1]) if "." in raw else ""
@@ -659,6 +689,21 @@ def load_market_sentiment() -> dict:
         return scorer.score_all_markets()
     except Exception as e:
         return {}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_top_signals(n: int = 10) -> pd.DataFrame:
+    """
+    Fetch the top-N highest-confidence pre-computed signals from Supabase.
+    TTL = 30 min — fresh enough for a home page preview, avoids hammering
+    Supabase on every rerun.  Returns empty DataFrame if Supabase is not
+    configured or the table has no retrained rows yet.
+    """
+    try:
+        from src.feedback_logger import FeedbackLogger
+        return FeedbackLogger().get_top_signals(n=n)
+    except Exception:
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1043,6 +1088,134 @@ if st.session_state.active_tab == "home":
                     """, unsafe_allow_html=True)
     else:
         st.info("Market sentiment unavailable — FinBERT is loading or RSS feeds are down.")
+
+    st.divider()
+
+    # ── Top 10 pre-computed signals ────────────────────────────────────────────
+    st.markdown("### 🏆 Top signals today")
+    st.caption(
+        "Highest-confidence buy/sell signals from today's batch retrain — "
+        "across all 10 markets. Click any card to open a live analysis tab "
+        "and recalculate the signal fresh."
+    )
+
+    top_df = load_top_signals(n=10)
+
+    if top_df.empty:
+        st.info(
+            "No pre-computed signals available yet — the daily batch hasn't run today, "
+            "or Supabase is not configured. Signals appear here after the 13:00 UTC batch."
+        )
+    else:
+        # Section-level staleness banner
+        latest_trade_date = top_df["trade_date"].iloc[0]
+        latest_updated_at = top_df["updated_at"].max()
+
+        import pytz
+        now_utc   = datetime.now(pytz.utc)
+        age_hours = (now_utc - latest_updated_at).total_seconds() / 3600
+        age_str   = (
+            f"{int(age_hours)}h {int((age_hours % 1)*60)}m ago"
+            if age_hours < 24
+            else latest_updated_at.strftime("%d %b %Y %H:%M UTC")
+        )
+        trade_date_str = latest_trade_date.strftime("%A, %d %b %Y")
+
+        st.markdown(f"""
+        <div style="background:#0d1a2d;border:1px solid #1e3a5f;border-radius:10px;
+                    padding:0.65rem 1rem;margin-bottom:1rem;
+                    display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:0.8rem;color:#60a5fa;">
+                📅 Signals as of <strong>{trade_date_str}</strong>
+                &nbsp;·&nbsp; ⏱ Calculated <strong>{age_str}</strong>
+            </span>
+            <span style="font-size:0.75rem;color:#475569;">
+                Pre-computed &nbsp;·&nbsp; Click any card to recalculate live
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Render 5 cards per row × 2 rows
+        rows = [top_df.iloc[:5], top_df.iloc[5:]]
+        for row_df in rows:
+            if row_df.empty:
+                continue
+            card_cols = st.columns(5)
+            for col, (_, sig) in zip(card_cols, row_df.iterrows()):
+                ticker      = sig["ticker"]
+                predicted   = int(sig["predicted"])
+                confidence  = float(sig["confidence"])
+                sentiment   = float(sig["sentiment"])
+                updated_at  = sig["updated_at"]
+
+                # Resolve market context for this ticker
+                mkt, exch, display_t, company = resolve_market_for_ticker(ticker)
+
+                # Visual config
+                is_buy      = predicted == 1
+                sig_label   = "BUY"  if is_buy else "SELL"
+                sig_color   = "#22c55e" if is_buy else "#ef4444"
+                sig_bg      = "rgba(34,197,94,0.07)" if is_buy else "rgba(239,68,68,0.07)"
+                sig_border  = "#16a34a" if is_buy else "#dc2626"
+                sig_icon    = "▲" if is_buy else "▼"
+                sent_color  = "#22c55e" if sentiment > 0.05 else ("#ef4444" if sentiment < -0.05 else "#94a3b8")
+
+                # Market flag
+                flag = mkt.split(" ")[0] if mkt else "🌐"
+                if exch:
+                    exch_flag = exch.split(" ")[0]
+                    flag = exch_flag
+
+                # Time label
+                calc_hours = (now_utc - updated_at).total_seconds() / 3600
+                calc_label = (
+                    f"{int(calc_hours)}h ago"
+                    if calc_hours >= 1
+                    else f"{int(calc_hours * 60)}m ago"
+                )
+
+                with col:
+                    st.markdown(f"""
+                    <div style="background:{sig_bg};border:1px solid {sig_border}44;
+                                border-top:2px solid {sig_border};
+                                border-radius:12px;padding:0.85rem 0.8rem;
+                                text-align:center;height:100%;">
+                        <div style="font-size:0.72rem;color:#64748b;margin-bottom:0.2rem">
+                            {flag}
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:0.95rem;
+                                    font-weight:600;color:#f1f5f9;margin-bottom:0.1rem">
+                            {display_t}
+                        </div>
+                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:0.5rem;
+                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                            {company if company != display_t else ""}
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:1.1rem;
+                                    font-weight:700;color:{sig_color}">
+                            {sig_icon} {sig_label}
+                        </div>
+                        <div style="font-size:0.78rem;color:#94a3b8;margin-top:0.25rem">
+                            {confidence:.0%} conf
+                        </div>
+                        <div style="font-size:0.72rem;color:{sent_color};margin-top:0.1rem">
+                            sentiment {sentiment:+.3f}
+                        </div>
+                        <div style="font-size:0.66rem;color:#334155;margin-top:0.4rem;
+                                    border-top:1px solid #1a2035;padding-top:0.35rem">
+                            ⏱ {calc_label}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Invisible button overlaid via st.button — opens ticker tab
+                    if st.button(
+                        f"Open {display_t}",
+                        key=f"top_sig_{ticker}",
+                        use_container_width=True,
+                        type="secondary",
+                    ):
+                        add_ticker_tab(ticker, display_t, company, mkt, exch)
 
     st.divider()
 
