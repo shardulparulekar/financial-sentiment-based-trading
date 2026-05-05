@@ -1073,6 +1073,11 @@ if st.session_state.active_tab == "home":
                         use_container_width=True,
                         type="secondary",
                     ):
+                        # Clear the home page signal cache so that when the
+                        # user returns after recalculating, the card for this
+                        # ticker shows the fresh updated_at instead of the
+                        # cached (up to 30 min old) value.
+                        load_top_signals.clear()
                         add_ticker_tab(
                             card["ticker"], card["display_t"],
                             card["company"], card["mkt"], card["exch"],
