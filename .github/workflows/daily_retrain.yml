@@ -2,11 +2,18 @@ name: Daily model retrain + cleanup
 
 on:
   schedule:
-    # Runs every day at 13:00 UTC including weekends.
-    # Weekdays: fresh price data + fresh news → full retrain
+    # Runs every day at 09:00 UTC.
+    # 09:00 UTC = off-peak for GitHub hosted runners → lower chance of runner
+    # unavailability / job drops vs the busy 13:00 UTC slot.
+    # Timing is also strategically better for prediction quality:
+    #   - European markets open at ~08:00 UTC — overnight sentiment is fully
+    #     captured before the open, giving a cleaner pre-market signal.
+    #   - US markets open at ~14:30 UTC — signal is ready well before open.
+    #   - Asian markets (JP, HK, IN) have already closed — prices available.
+    # Weekdays: fresh Asian close prices + overnight news → full retrain
     # Weekends: Friday EOD prices + weekend news → sentiment-updated signal
-    # This ensures Monday's prediction incorporates all weekend news.
-    - cron: "0 13 * * *"
+    #           (ensures Monday's prediction captures all weekend news)
+    - cron: "0 9 * * *"
 
   # Keeps the workflow "active" so GitHub doesn't silently drop scheduled runs.
   # Any push to main resets the inactivity clock.
