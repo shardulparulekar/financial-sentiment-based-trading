@@ -277,44 +277,41 @@ class FeedbackLogger:
             logger.warning(f"get_unretrained failed: {e}")
             return pd.DataFrame()
 
-    def get_top_signals(self, n: int = 10) -> pd.DataFrame:
+    def get_top_signals(self, n: int = 10, lookback_days: int = 5) -> pd.DataFrame:
         """
-        Return the top-N highest-confidence predictions from the most recent
-        trade_date available in the table.  Used by the home page to show a
-        pre-computed signal grid without running the full pipeline.
+        Return the top-N highest-confidence signals for the home page,
+        looking back up to `lookback_days` to stay populated even when:
+          - today's batch failed or hasn't run yet
+          - it's a weekend (no new trade_date)
+          - the batch only partially completed (fewer than N tickers)
 
-        NOTE: we do NOT filter by retrained=True here.  That flag is internal
-        bookkeeping for the batch job — a freshly logged prediction with
-        retrained=False is equally valid for display on the home page.
-        Filtering by it was the cause of seeing only 1 card (the one row that
-        happened to have been marked retrained=True in the test run).
+        Strategy: fetch all rows from the last `lookback_days` days, then
+        keep only the MOST RECENT row per ticker (by updated_at), then sort
+        the survivors by confidence descending and return the top N.
+
+        This means:
+          - A ticker retrained today shows today's signal
+          - A ticker whose last run was 2 days ago shows that signal
+          - The per-card timestamp on the home page honestly reflects each
+            ticker's individual freshness, so the user always knows exactly
+            how old each signal is.
+
+        NOTE: retrained=True is NOT filtered here — that flag is internal
+        bookkeeping for the batch job and is irrelevant for home page display.
 
         Returns columns:
             ticker, trade_date, predicted, confidence, sentiment, updated_at
-        Sorted by confidence descending.
+        Sorted by confidence descending (top N).
         """
         try:
-            client = _get_client()
+            client  = _get_client()
+            cutoff  = (datetime.utcnow() - timedelta(days=lookback_days)).date().isoformat()
 
-            # Step 1: find the most recent trade_date in the whole table
-            latest = (
-                client.table(self.TABLE)
-                .select("trade_date")
-                .order("trade_date", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if not latest.data:
-                return pd.DataFrame()
-            latest_date = latest.data[0]["trade_date"]
-
-            # Step 2: fetch all rows for that date, sorted by confidence desc
             result = (
                 client.table(self.TABLE)
                 .select("ticker,trade_date,predicted,confidence,sentiment,updated_at")
-                .eq("trade_date", latest_date)
-                .order("confidence", desc=True)
-                .limit(n)
+                .gte("trade_date", cutoff)
+                .order("updated_at", desc=True)   # newest first so dedup keeps latest
                 .execute()
             )
             if not result.data:
@@ -325,7 +322,16 @@ class FeedbackLogger:
             df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True)
             df["confidence"] = df["confidence"].astype(float)
             df["sentiment"]  = df["sentiment"].astype(float)
-            return df
+
+            # Keep only the most recent row per ticker (updated_at already desc)
+            df = df.drop_duplicates(subset="ticker", keep="first")
+
+            # Return top N by confidence
+            return (
+                df.sort_values("confidence", ascending=False)
+                  .head(n)
+                  .reset_index(drop=True)
+            )
         except EnvironmentError:
             return pd.DataFrame()
         except Exception as e:
