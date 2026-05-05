@@ -942,6 +942,133 @@ if st.session_state.active_tab == "home":
 
     st.divider()
 
+    # ── Top 10 pre-computed signals ────────────────────────────────────────────
+    st.markdown("### 🏆 Top signals today")
+    st.caption(
+        "Highest-confidence buy/sell signals from the latest batch retrain — "
+        "across all 10 markets. Click any card to open a live analysis tab "
+        "and recalculate the signal fresh."
+    )
+
+    top_df = load_top_signals(n=10)
+
+    if top_df.empty:
+        st.info(
+            "No pre-computed signals available yet — the daily batch hasn't run today, "
+            "or Supabase is not configured. Signals appear here after the 13:00 UTC batch."
+        )
+    else:
+        # Section-level staleness banner
+        latest_trade_date = top_df["trade_date"].iloc[0]
+        latest_updated_at = top_df["updated_at"].max()
+
+        import pytz
+        now_utc   = datetime.now(pytz.utc)
+        age_hours = (now_utc - latest_updated_at).total_seconds() / 3600
+        age_str   = (
+            f"{int(age_hours)}h {int((age_hours % 1)*60)}m ago"
+            if age_hours < 24
+            else latest_updated_at.strftime("%d %b %Y %H:%M UTC")
+        )
+        trade_date_str = latest_trade_date.strftime("%A, %d %b %Y")
+
+        st.markdown(f"""
+        <div style="background:#0d1a2d;border:1px solid #1e3a5f;border-radius:10px;
+                    padding:0.65rem 1rem;margin-bottom:1rem;
+                    display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:0.8rem;color:#60a5fa;">
+                📅 Signals as of <strong>{trade_date_str}</strong>
+                &nbsp;·&nbsp; ⏱ Calculated <strong>{age_str}</strong>
+            </span>
+            <span style="font-size:0.75rem;color:#475569;">
+                Pre-computed &nbsp;·&nbsp; Click any card to recalculate live
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Render 5 cards per row × 2 rows
+        rows = [top_df.iloc[:5], top_df.iloc[5:]]
+        for row_df in rows:
+            if row_df.empty:
+                continue
+            card_cols = st.columns(5)
+            for col, (_, sig) in zip(card_cols, row_df.iterrows()):
+                ticker      = sig["ticker"]
+                predicted   = int(sig["predicted"])
+                confidence  = float(sig["confidence"])
+                sentiment   = float(sig["sentiment"])
+                updated_at  = sig["updated_at"]
+
+                # Resolve market context for this ticker
+                mkt, exch, display_t, company = resolve_market_for_ticker(ticker)
+
+                # Visual config
+                is_buy      = predicted == 1
+                sig_label   = "BUY"  if is_buy else "SELL"
+                sig_color   = "#22c55e" if is_buy else "#ef4444"
+                sig_bg      = "rgba(34,197,94,0.07)" if is_buy else "rgba(239,68,68,0.07)"
+                sig_border  = "#16a34a" if is_buy else "#dc2626"
+                sig_icon    = "▲" if is_buy else "▼"
+                sent_color  = "#22c55e" if sentiment > 0.05 else ("#ef4444" if sentiment < -0.05 else "#94a3b8")
+
+                # Market flag — use exchange flag for EU, market flag otherwise
+                flag = mkt.split(" ")[0] if mkt else "🌐"
+                if exch:
+                    flag = exch.split(" ")[0]
+
+                # Time label
+                calc_hours = (now_utc - updated_at).total_seconds() / 3600
+                calc_label = (
+                    f"{int(calc_hours)}h ago"
+                    if calc_hours >= 1
+                    else f"{int(calc_hours * 60)}m ago"
+                )
+
+                with col:
+                    st.markdown(f"""
+                    <div style="background:{sig_bg};border:1px solid {sig_border}44;
+                                border-top:2px solid {sig_border};
+                                border-radius:12px;padding:0.85rem 0.8rem;
+                                text-align:center;height:100%;">
+                        <div style="font-size:0.72rem;color:#64748b;margin-bottom:0.2rem">
+                            {flag}
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:0.95rem;
+                                    font-weight:600;color:#f1f5f9;margin-bottom:0.1rem">
+                            {display_t}
+                        </div>
+                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:0.5rem;
+                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                            {company if company != display_t else ""}
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:1.1rem;
+                                    font-weight:700;color:{sig_color}">
+                            {sig_icon} {sig_label}
+                        </div>
+                        <div style="font-size:0.78rem;color:#94a3b8;margin-top:0.25rem">
+                            {confidence:.0%} conf
+                        </div>
+                        <div style="font-size:0.72rem;color:{sent_color};margin-top:0.1rem">
+                            sentiment {sentiment:+.3f}
+                        </div>
+                        <div style="font-size:0.66rem;color:#334155;margin-top:0.4rem;
+                                    border-top:1px solid #1a2035;padding-top:0.35rem">
+                            ⏱ {calc_label}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Button opens a live analysis tab for this ticker
+                    if st.button(
+                        f"Open {display_t}",
+                        key=f"top_sig_{ticker}",
+                        use_container_width=True,
+                        type="secondary",
+                    ):
+                        add_ticker_tab(ticker, display_t, company, mkt, exch)
+
+    st.divider()
+
     # ── World indices ──────────────────────────────────────────────────────────
     st.markdown("### 🌍 Global markets")
 
@@ -1088,134 +1215,6 @@ if st.session_state.active_tab == "home":
                     """, unsafe_allow_html=True)
     else:
         st.info("Market sentiment unavailable — FinBERT is loading or RSS feeds are down.")
-
-    st.divider()
-
-    # ── Top 10 pre-computed signals ────────────────────────────────────────────
-    st.markdown("### 🏆 Top signals today")
-    st.caption(
-        "Highest-confidence buy/sell signals from today's batch retrain — "
-        "across all 10 markets. Click any card to open a live analysis tab "
-        "and recalculate the signal fresh."
-    )
-
-    top_df = load_top_signals(n=10)
-
-    if top_df.empty:
-        st.info(
-            "No pre-computed signals available yet — the daily batch hasn't run today, "
-            "or Supabase is not configured. Signals appear here after the 13:00 UTC batch."
-        )
-    else:
-        # Section-level staleness banner
-        latest_trade_date = top_df["trade_date"].iloc[0]
-        latest_updated_at = top_df["updated_at"].max()
-
-        import pytz
-        now_utc   = datetime.now(pytz.utc)
-        age_hours = (now_utc - latest_updated_at).total_seconds() / 3600
-        age_str   = (
-            f"{int(age_hours)}h {int((age_hours % 1)*60)}m ago"
-            if age_hours < 24
-            else latest_updated_at.strftime("%d %b %Y %H:%M UTC")
-        )
-        trade_date_str = latest_trade_date.strftime("%A, %d %b %Y")
-
-        st.markdown(f"""
-        <div style="background:#0d1a2d;border:1px solid #1e3a5f;border-radius:10px;
-                    padding:0.65rem 1rem;margin-bottom:1rem;
-                    display:flex;align-items:center;justify-content:space-between;">
-            <span style="font-size:0.8rem;color:#60a5fa;">
-                📅 Signals as of <strong>{trade_date_str}</strong>
-                &nbsp;·&nbsp; ⏱ Calculated <strong>{age_str}</strong>
-            </span>
-            <span style="font-size:0.75rem;color:#475569;">
-                Pre-computed &nbsp;·&nbsp; Click any card to recalculate live
-            </span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Render 5 cards per row × 2 rows
-        rows = [top_df.iloc[:5], top_df.iloc[5:]]
-        for row_df in rows:
-            if row_df.empty:
-                continue
-            card_cols = st.columns(5)
-            for col, (_, sig) in zip(card_cols, row_df.iterrows()):
-                ticker      = sig["ticker"]
-                predicted   = int(sig["predicted"])
-                confidence  = float(sig["confidence"])
-                sentiment   = float(sig["sentiment"])
-                updated_at  = sig["updated_at"]
-
-                # Resolve market context for this ticker
-                mkt, exch, display_t, company = resolve_market_for_ticker(ticker)
-
-                # Visual config
-                is_buy      = predicted == 1
-                sig_label   = "BUY"  if is_buy else "SELL"
-                sig_color   = "#22c55e" if is_buy else "#ef4444"
-                sig_bg      = "rgba(34,197,94,0.07)" if is_buy else "rgba(239,68,68,0.07)"
-                sig_border  = "#16a34a" if is_buy else "#dc2626"
-                sig_icon    = "▲" if is_buy else "▼"
-                sent_color  = "#22c55e" if sentiment > 0.05 else ("#ef4444" if sentiment < -0.05 else "#94a3b8")
-
-                # Market flag
-                flag = mkt.split(" ")[0] if mkt else "🌐"
-                if exch:
-                    exch_flag = exch.split(" ")[0]
-                    flag = exch_flag
-
-                # Time label
-                calc_hours = (now_utc - updated_at).total_seconds() / 3600
-                calc_label = (
-                    f"{int(calc_hours)}h ago"
-                    if calc_hours >= 1
-                    else f"{int(calc_hours * 60)}m ago"
-                )
-
-                with col:
-                    st.markdown(f"""
-                    <div style="background:{sig_bg};border:1px solid {sig_border}44;
-                                border-top:2px solid {sig_border};
-                                border-radius:12px;padding:0.85rem 0.8rem;
-                                text-align:center;height:100%;">
-                        <div style="font-size:0.72rem;color:#64748b;margin-bottom:0.2rem">
-                            {flag}
-                        </div>
-                        <div style="font-family:'JetBrains Mono',monospace;font-size:0.95rem;
-                                    font-weight:600;color:#f1f5f9;margin-bottom:0.1rem">
-                            {display_t}
-                        </div>
-                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:0.5rem;
-                                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                            {company if company != display_t else ""}
-                        </div>
-                        <div style="font-family:'JetBrains Mono',monospace;font-size:1.1rem;
-                                    font-weight:700;color:{sig_color}">
-                            {sig_icon} {sig_label}
-                        </div>
-                        <div style="font-size:0.78rem;color:#94a3b8;margin-top:0.25rem">
-                            {confidence:.0%} conf
-                        </div>
-                        <div style="font-size:0.72rem;color:{sent_color};margin-top:0.1rem">
-                            sentiment {sentiment:+.3f}
-                        </div>
-                        <div style="font-size:0.66rem;color:#334155;margin-top:0.4rem;
-                                    border-top:1px solid #1a2035;padding-top:0.35rem">
-                            ⏱ {calc_label}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    # Invisible button overlaid via st.button — opens ticker tab
-                    if st.button(
-                        f"Open {display_t}",
-                        key=f"top_sig_{ticker}",
-                        use_container_width=True,
-                        type="secondary",
-                    ):
-                        add_ticker_tab(ticker, display_t, company, mkt, exch)
 
     st.divider()
 
