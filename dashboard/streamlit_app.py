@@ -1009,60 +1009,68 @@ if st.session_state.active_tab == "home":
         # Section note
         st.markdown("""
         <div style="background:#0d1117;border:1px solid #1a2035;border-radius:8px;
-                    padding:0.55rem 1rem;margin-bottom:1rem;
-                    display:flex;align-items:center;gap:1rem;">
+                    padding:0.55rem 1rem;margin-bottom:1rem;">
             <span style="font-size:0.78rem;color:#475569;">
                 ℹ️ Each card shows its own calculation time.
-                &nbsp;·&nbsp; Click any card to recalculate live with fresh news.
+                &nbsp;·&nbsp; Click <strong style="color:#94a3b8">Open</strong>
+                to open a live analysis tab and recalculate fresh.
             </span>
         </div>
         """, unsafe_allow_html=True)
 
-        # Style st.button to look like a card — strip button chrome, keep click
+        # Inject CSS to collapse gap between card row and button row so they
+        # look visually connected, and shrink button height/padding to be tight.
         st.markdown("""
 <style>
-div[data-testid="stButton"] button[kind="secondary"] {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    width: 100% !important;
-    height: auto !important;
-    cursor: pointer;
-}
-div[data-testid="stButton"] button[kind="secondary"]:hover {
-    filter: brightness(1.12);
-    transform: translateY(-2px);
-    transition: all 0.15s ease;
-}
-div[data-testid="stButton"] button[kind="secondary"] p {
-    white-space: pre-wrap !important;
+/* Tighten the Open buttons so they sit flush under their card */
+div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
+    padding-top:    0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    font-size:      0.72rem !important;
+    border-radius:  0 0 10px 10px !important;
+    border-top:     none !important;
+    margin-top:     -4px !important;
 }
 </style>
         """, unsafe_allow_html=True)
 
-        # 5 cards per row — st.columns(5) on desktop, Streamlit auto-stacks
-        # vertically on very narrow screens.
+        # Two-pass render per row of 5:
+        #   Pass 1 — HTML cards (no Streamlit widgets)
+        #   Pass 2 — Open buttons directly below, same column widths
+        # The CSS above pulls the buttons up flush under the cards.
         for i in range(0, len(cards), 5):
             chunk = cards[i:i+5]
-            cols = st.columns(5)
-            for col, card in zip(cols, chunk):
+            n = len(chunk)
+
+            # Pass 1 — cards
+            card_cols = st.columns(5)
+            for col, card in zip(card_cols, chunk):
                 with col:
-                    card_html = (
-                        f'''<div style="background:{card['sig_bg']};' +
-                        f'border:1px solid {card['sig_border']}44;' +
-                        f'border-top:3px solid {card['sig_border']};' +
-                        'border-radius:12px;padding:0.85rem 0.6rem;text-align:center;width:100%;">' +
-                        f'<div style="font-size:0.85rem">{card['flag']}</div>' +
-                        f'<div style="font-family:monospace;font-size:0.9rem;font-weight:600;color:#f1f5f9">{card['display_t']}</div>' +
-                        f'<div style="font-size:0.65rem;color:#64748b;margin-bottom:0.4rem">{card['company'] if card['company'] != card['display_t'] else " "}</div>' +
-                        f'<div style="font-size:1.1rem;font-weight:700;color:{card['sig_color']}">{card['sig_icon']} {card['sig_label']}</div>' +
-                        f'<div style="font-size:0.75rem;color:#94a3b8;margin-top:0.2rem">{card['confidence']:.0%} conf</div>' +
-                        f'<div style="font-size:0.7rem;color:{card['sent_color']};margin-top:0.1rem">sent {card['sentiment']:+.3f}</div>' +
-                        f'<div style="font-size:0.62rem;color:#475569;margin-top:0.4rem;border-top:1px solid #1a2035;padding-top:0.3rem">' +
-                        f'📅 {card['td_label']} · ⏱ {card['age_label']}</div></div>'''
-                    )
+                    st.markdown(f"""
+<div style="background:{card['sig_bg']};
+     border:1px solid {card['sig_border']}44;
+     border-top:3px solid {card['sig_border']};
+     border-radius:12px 12px 0 0;
+     padding:0.8rem 0.6rem;text-align:center;">
+  <div style="font-size:0.82rem">{card['flag']}</div>
+  <div style="font-family:monospace;font-size:0.88rem;font-weight:600;color:#f1f5f9">{card['display_t']}</div>
+  <div style="font-size:0.63rem;color:#64748b;margin-bottom:0.35rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{card['company'] if card['company'] != card['display_t'] else '&nbsp;'}</div>
+  <div style="font-size:1.05rem;font-weight:700;color:{card['sig_color']}">{card['sig_icon']} {card['sig_label']}</div>
+  <div style="font-size:0.72rem;color:#94a3b8;margin-top:0.15rem">{card['confidence']:.0%} conf</div>
+  <div style="font-size:0.68rem;color:{card['sent_color']};margin-top:0.1rem">sent {card['sentiment']:+.3f}</div>
+  <div style="font-size:0.6rem;color:#475569;margin-top:0.35rem;border-top:1px solid #1a2035;padding-top:0.3rem">📅 {card['td_label']} · ⏱ {card['age_label']}</div>
+</div>""", unsafe_allow_html=True)
+            # Fill empty columns in last row with blank space so buttons align
+            for col in card_cols[n:]:
+                with col:
+                    st.empty()
+
+            # Pass 2 — buttons
+            btn_cols = st.columns(5)
+            for col, card in zip(btn_cols, chunk):
+                with col:
                     if st.button(
-                        card_html,
+                        f"Open {card['display_t']}",
                         key=f"top_sig_{card['ticker']}",
                         use_container_width=True,
                         type="secondary",
@@ -1072,6 +1080,12 @@ div[data-testid="stButton"] button[kind="secondary"] p {
                             card["ticker"], card["display_t"],
                             card["company"], card["mkt"], card["exch"],
                         )
+            for col in btn_cols[n:]:
+                with col:
+                    st.empty()
+
+            st.markdown("<div style='margin-bottom:0.5rem'></div>",
+                        unsafe_allow_html=True)
 
     st.divider()
 
