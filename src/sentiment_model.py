@@ -153,15 +153,27 @@ class SentimentPipeline:
                     self.batch_size = 16   # reduce batch size on fallback
 
                 # use_safetensors=True bypasses torch.load, avoiding CVE-2025-32434
+                # low_cpu_mem_usage=False forces eager tensor materialisation —
+                # prevents "Tensor.item() cannot be called on meta tensors" which
+                # occurs on Python 3.14 + torch >= 2.6 where deferred loading is
+                # the new default but breaks .item() calls during pipeline warmup.
                 try:
                     model     = BertForSequenceClassification.from_pretrained(
-                        model_id, use_safetensors=True,
+                        model_id, use_safetensors=True, low_cpu_mem_usage=False,
                     )
                     tokenizer = BertTokenizer.from_pretrained(model_id)
                 except Exception:
                     # Fallback model may not have safetensors — try without
-                    model     = AutoModelForSequenceClassification.from_pretrained(model_id)
+                    model     = AutoModelForSequenceClassification.from_pretrained(
+                        model_id, low_cpu_mem_usage=False,
+                    )
                     tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+                # Force all tensors off meta device before pipeline wraps model.
+                # On Python 3.14 + torch 2.11 low_cpu_mem_usage=False alone is
+                # not enough — .to('cpu') re-materialises any remaining meta params.
+                import torch as _torch
+                model = model.to(_torch.device("cpu"))
 
                 self._pipeline = pipeline(
                     task       = "text-classification",
