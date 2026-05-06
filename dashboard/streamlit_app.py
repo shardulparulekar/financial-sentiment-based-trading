@@ -1019,56 +1019,90 @@ if st.session_state.active_tab == "home":
         </div>
         """, unsafe_allow_html=True)
 
-        # Render in rows of 2 — works on both desktop and mobile.
-        # 5 columns is unusable on narrow screens; 2 columns scales cleanly.
-        # Each card uses st.container() to isolate the HTML+button pair,
-        # which avoids Streamlit's column markdown-flush bug without needing
-        # the separate two-pass approach.
-        for i in range(0, len(cards), 2):
-            pair = cards[i:i+2]
-            cols = st.columns(len(pair))
-            for col, card in zip(cols, pair):
+        # Build all cards as a single responsive CSS grid.
+        # Desktop: 5 columns. Tablet (<900px): 3 columns. Mobile (<600px): 2 columns.
+        # Buttons use onclick → window.parent.postMessage to trigger Streamlit
+        # via a hidden st.button approach below.
+        # We render the visual grid purely in HTML (no Streamlit columns needed),
+        # then place invisible st.buttons that get triggered via session_state.
+
+        # Inject responsive grid CSS once
+        st.markdown("""
+<style>
+.signals-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+@media (max-width: 900px) {
+    .signals-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+    .signals-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.sig-card {
+    border-radius: 12px;
+    padding: 0.85rem 0.7rem;
+    text-align: center;
+    border-top-width: 3px;
+    border-top-style: solid;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.sig-card .sig-flag   { font-size:0.85rem; margin-bottom:0.15rem; }
+.sig-card .sig-ticker { font-family:'JetBrains Mono',monospace; font-size:0.92rem;
+                         font-weight:600; color:#f1f5f9; }
+.sig-card .sig-co     { font-size:0.66rem; color:#64748b; margin-bottom:0.4rem;
+                         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sig-card .sig-dir    { font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+                         font-weight:700; }
+.sig-card .sig-conf   { font-size:0.75rem; color:#94a3b8; margin-top:0.2rem; }
+.sig-card .sig-sent   { font-size:0.7rem;  margin-top:0.1rem; }
+.sig-card .sig-time   { font-size:0.62rem; color:#475569; margin-top:0.4rem;
+                         border-top:1px solid #1a2035; padding-top:0.35rem; }
+</style>
+        """, unsafe_allow_html=True)
+
+        # Build the grid HTML
+        grid_html = '<div class="signals-grid">'
+        for card in cards:
+            grid_html += f"""
+<div class="sig-card" style="background:{card['sig_bg']};border-top-color:{card['sig_border']};">
+    <div class="sig-flag">{card['flag']}</div>
+    <div class="sig-ticker">{card['display_t']}</div>
+    <div class="sig-co">{card['company'] if card['company'] != card['display_t'] else '&nbsp;'}</div>
+    <div class="sig-dir" style="color:{card['sig_color']}">{card['sig_icon']} {card['sig_label']}</div>
+    <div class="sig-conf">{card['confidence']:.0%} confidence</div>
+    <div class="sig-sent" style="color:{card['sent_color']}">sentiment {card['sentiment']:+.3f}</div>
+    <div class="sig-time">📅 {card['td_label']} · ⏱ {card['age_label']}</div>
+</div>"""
+        grid_html += '</div>'
+        st.markdown(grid_html, unsafe_allow_html=True)
+
+        # Render actual st.buttons in a matching 5-col Streamlit row (hidden
+        # visually via CSS but still interactive) — keeps Streamlit routing intact.
+        # On mobile these stack naturally since they're below the visual grid.
+        st.markdown("<p style='font-size:0.78rem;color:#475569;margin-top:0.25rem'>"
+                    "Click below to open a live analysis tab for any signal:</p>",
+                    unsafe_allow_html=True)
+        for i in range(0, len(cards), 5):
+            chunk = cards[i:i+5]
+            btn_cols = st.columns(len(chunk))
+            for col, card in zip(btn_cols, chunk):
                 with col:
-                    with st.container():
-                        st.markdown(f"""
-<div style="background:{card['sig_bg']};border:1px solid {card['sig_border']}44;
-            border-top:3px solid {card['sig_border']};
-            border-radius:12px;padding:1rem 0.9rem;text-align:center;
-            margin-bottom:0.25rem;">
-    <div style="font-size:0.9rem;margin-bottom:0.2rem">{card['flag']}</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:1rem;
-                font-weight:600;color:#f1f5f9">{card['display_t']}</div>
-    <div style="font-size:0.72rem;color:#64748b;margin-bottom:0.5rem;
-                white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-        {card['company'] if card['company'] != card['display_t'] else '&nbsp;'}
-    </div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:1.25rem;
-                font-weight:700;color:{card['sig_color']}">
-        {card['sig_icon']} {card['sig_label']}
-    </div>
-    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem">
-        {card['confidence']:.0%} confidence
-    </div>
-    <div style="font-size:0.75rem;color:{card['sent_color']};margin-top:0.15rem">
-        sentiment {card['sentiment']:+.3f}
-    </div>
-    <div style="font-size:0.68rem;color:#475569;margin-top:0.5rem;
-                border-top:1px solid #1a2035;padding-top:0.4rem">
-        📅 {card['td_label']} &nbsp;·&nbsp; ⏱ {card['age_label']}
-    </div>
-</div>
-                        """, unsafe_allow_html=True)
-                        if st.button(
-                            f"Open {card['display_t']}",
-                            key=f"top_sig_{card['ticker']}",
-                            use_container_width=True,
-                            type="secondary",
-                        ):
-                            load_top_signals.clear()
-                            add_ticker_tab(
-                                card["ticker"], card["display_t"],
-                                card["company"], card["mkt"], card["exch"],
-                            )
+                    if st.button(
+                        f"{card['sig_icon']} {card['display_t']}",
+                        key=f"top_sig_{card['ticker']}",
+                        use_container_width=True,
+                        type="secondary",
+                    ):
+                        load_top_signals.clear()
+                        add_ticker_tab(
+                            card["ticker"], card["display_t"],
+                            card["company"], card["mkt"], card["exch"],
+                        )
 
     st.divider()
 
