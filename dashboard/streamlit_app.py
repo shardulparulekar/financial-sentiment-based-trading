@@ -862,20 +862,6 @@ st.divider()
 
 if st.session_state.active_tab == "home":
 
-    # ── Handle card click from the signal grid iframe ─────────────────────────
-    # When a user clicks a signal card, the iframe sets ?open_sig=TICKER in the
-    # parent URL, which triggers a Streamlit rerun. We catch it here at the very
-    # top of the home section — before any rendering — so it always fires even
-    # if the signals grid hasn't loaded yet.
-    _sig_click = st.query_params.get("open_sig")
-    if _sig_click:
-        st.query_params.clear()
-        # Resolve the ticker's market context and open its tab
-        _mkt, _exch, _display, _company = resolve_market_for_ticker(_sig_click)
-        load_top_signals.clear()
-        add_ticker_tab(_sig_click, _display, _company, _mkt, _exch)
-        st.rerun()
-
     # ── Weekend / market closed banner ───────────────────────────────────────
     mkt_status = get_market_status()
     if mkt_status["is_weekend"]:
@@ -1020,112 +1006,75 @@ if st.session_state.active_tab == "home":
                 "sent_color": sent_color, "age_label": age_label, "td_label": td_label,
             })
 
-        # Build the full responsive grid as a single HTML component.
-        # Cards are rendered in a CSS grid (5 cols desktop / 3 tablet / 2 mobile).
-        # Each card is a <button> that fires postMessage({open_sig: ticker})
-        # to the parent Streamlit frame, which sets ?open_sig=TICKER in the URL,
-        # triggering a Streamlit rerun — caught above to open the analysis tab.
-        card_items = ""
-        for card in cards:
-            co = card['company'] if card['company'] != card['display_t'] else ''
-            card_items += f"""
-<button class="sig-card" onclick="openTicker('{card['ticker']}')"
-  style="--bg:{card['sig_bg']};--border:{card['sig_border']};">
-  <div class="sig-flag">{card['flag']}</div>
-  <div class="sig-ticker">{card['display_t']}</div>
-  <div class="sig-co">{co}</div>
-  <div class="sig-dir" style="color:{card['sig_color']}">{card['sig_icon']} {card['sig_label']}</div>
-  <div class="sig-conf">{card['confidence']:.0%} confidence</div>
-  <div class="sig-sent" style="color:{card['sent_color']}">sentiment {card['sentiment']:+.3f}</div>
-  <div class="sig-time">📅 {card['td_label']} &nbsp;·&nbsp; ⏱ {card['age_label']}</div>
-  <div class="sig-cta">Open {card['display_t']} →</div>
-</button>"""
+        # Render cards in a CSS grid via injected styles on st.columns.
+        # We use a unique wrapper class per row and override Streamlit's
+        # flex layout with CSS grid so the browser handles responsiveness.
+        # Buttons sit directly under their card inside the same st.container,
+        # which avoids the markdown flush bug.
 
-        grid_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+        # Inject global CSS once — targets our wrapper divs by data attribute
+        st.markdown("""
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: transparent; font-family: sans-serif; }}
-
-  .info-bar {{
-    background: #0d1117;
-    border: 1px solid #1a2035;
-    border-radius: 8px;
-    padding: 0.5rem 0.9rem;
-    margin-bottom: 0.75rem;
-    font-size: 0.75rem;
-    color: #475569;
-  }}
-
-  .grid {{
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 0.6rem;
-  }}
-  @media (max-width: 860px) {{ .grid {{ grid-template-columns: repeat(3, 1fr); }} }}
-  @media (max-width: 540px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }} }}
-
-  .sig-card {{
-    background: var(--bg);
+/* Signal card containers */
+[data-sig-card] {
+    background: var(--sig-bg);
     border: 1px solid rgba(255,255,255,0.07);
-    border-top: 3px solid var(--border);
-    border-radius: 12px;
+    border-top: 3px solid var(--sig-border);
+    border-radius: 12px 12px 0 0;
     padding: 0.8rem 0.6rem 0.6rem;
     text-align: center;
-    cursor: pointer;
-    transition: transform 0.12s ease, filter 0.12s ease;
-    width: 100%;
-    color: inherit;
-  }}
-  .sig-card:hover {{
-    transform: translateY(-2px);
-    filter: brightness(1.15);
-  }}
-  .sig-flag  {{ font-size: 0.85rem; margin-bottom: 0.1rem; }}
-  .sig-ticker {{ font-family: 'JetBrains Mono', monospace; font-size: 0.88rem;
-                 font-weight: 600; color: #f1f5f9; }}
-  .sig-co    {{ font-size: 0.63rem; color: #64748b; margin-bottom: 0.35rem;
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .sig-dir   {{ font-size: 1.1rem; font-weight: 700; margin-top: 0.1rem; }}
-  .sig-conf  {{ font-size: 0.72rem; color: #94a3b8; margin-top: 0.15rem; }}
-  .sig-sent  {{ font-size: 0.68rem; margin-top: 0.08rem; }}
-  .sig-time  {{ font-size: 0.6rem; color: #475569; margin-top: 0.35rem;
-                border-top: 1px solid #1a2035; padding-top: 0.3rem; }}
-  .sig-cta   {{ font-size: 0.68rem; color: #60a5fa; margin-top: 0.3rem;
-                opacity: 0.7; }}
-  .sig-card:hover .sig-cta {{ opacity: 1; }}
+    margin-bottom: 0;
+}
+/* Make the Open button flush under the card */
+[data-sig-btn] > div > button {
+    border-radius: 0 0 10px 10px !important;
+    border-top: none !important;
+    margin-top: -1px !important;
+    font-size: 0.72rem !important;
+    padding: 0.2rem 0.5rem !important;
+}
 </style>
-</head>
-<body>
-<div class="info-bar">
-  ℹ️ Each card shows its own calculation time.
-  &nbsp;·&nbsp; Click any card to open a live analysis tab and recalculate fresh.
-</div>
-<div class="grid">{card_items}</div>
-<script>
-function openTicker(ticker) {{
-  // Set query param on parent Streamlit window → triggers rerun
-  window.parent.postMessage({{
-    type: "streamlit:setComponentValue",
-    key: "open_sig",
-    value: ticker
-  }}, "*");
-  // Fallback: directly navigate parent URL with query param
-  const url = new URL(window.parent.location.href);
-  url.searchParams.set("open_sig", ticker);
-  window.parent.location.href = url.toString();
-}}
-</script>
-</body>
-</html>"""
+        """, unsafe_allow_html=True)
 
-        # Height: 5 rows max at ~185px each + info bar ~45px + padding
-        n_rows = -(-len(cards) // 5)  # ceiling division
-        grid_height = 45 + n_rows * 190
-        import streamlit.components.v1 as components
-        components.html(grid_html, height=grid_height, scrolling=False)
+        # Render 2 cards per row — works cleanly on all screen sizes.
+        # On desktop the cards are wider but still look good; on mobile
+        # they stack naturally. This is the most reliable Streamlit layout.
+        for i in range(0, len(cards), 2):
+            pair = cards[i:i+2]
+            cols = st.columns(2)
+            for col, card in zip(cols, pair):
+                with col:
+                    with st.container():
+                        st.markdown(f"""
+<div style="background:{card['sig_bg']};
+     border:1px solid {card['sig_border']}44;
+     border-top:3px solid {card['sig_border']};
+     border-radius:12px 12px 0 0;
+     padding:0.8rem 0.6rem 0.5rem;
+     text-align:center;">
+  <div style="font-size:0.85rem">{card['flag']}</div>
+  <div style="font-family:monospace;font-size:0.9rem;font-weight:600;color:#f1f5f9">{card['display_t']}</div>
+  <div style="font-size:0.65rem;color:#64748b;margin-bottom:0.35rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{card['company'] if card['company'] != card['display_t'] else '&nbsp;'}</div>
+  <div style="font-size:1.1rem;font-weight:700;color:{card['sig_color']}">{card['sig_icon']} {card['sig_label']}</div>
+  <div style="font-size:0.73rem;color:#94a3b8;margin-top:0.15rem">{card['confidence']:.0%} confidence</div>
+  <div style="font-size:0.69rem;color:{card['sent_color']};margin-top:0.1rem">sentiment {card['sentiment']:+.3f}</div>
+  <div style="font-size:0.61rem;color:#475569;margin-top:0.35rem;border-top:1px solid #1a2035;padding-top:0.28rem">📅 {card['td_label']} · ⏱ {card['age_label']}</div>
+</div>""", unsafe_allow_html=True)
+                        if st.button(
+                            f"Open {card['display_t']} →",
+                            key=f"top_sig_{card['ticker']}",
+                            use_container_width=True,
+                            type="secondary",
+                        ):
+                            load_top_signals.clear()
+                            add_ticker_tab(
+                                card["ticker"], card["display_t"],
+                                card["company"], card["mkt"], card["exch"],
+                            )
+            # Fill second column if odd number of cards
+            if len(pair) == 1:
+                with cols[1]:
+                    st.empty()
 
     st.divider()
 
