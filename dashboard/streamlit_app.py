@@ -568,6 +568,9 @@ def close_ticker_tab(full_ticker):
     ]
     if st.session_state.active_tab == full_ticker:
         st.session_state.active_tab = "home"
+        # Clear signal cache so home page shows fresh updated_at timestamps
+        # after the user has run an analysis and closed the tab.
+        load_top_signals.clear()
     st.rerun()
 
 
@@ -834,6 +837,10 @@ with pill_cols[0]:
     if st.button("🏠 Home", type="secondary" if st.session_state.active_tab != "home" else "primary",
                  use_container_width=True):
         st.session_state.active_tab = "home"
+        # Clear signal cache so the home page re-fetches updated_at from
+        # Supabase — by the time the user clicks Home the pipeline has finished
+        # and written the fresh timestamp, so the card now shows the new time.
+        load_top_signals.clear()
         st.rerun()
 
 for i, tab in enumerate(st.session_state.open_tickers):
@@ -1066,7 +1073,6 @@ if st.session_state.active_tab == "home":
                             use_container_width=True,
                             type="secondary",
                         ):
-                            load_top_signals.clear()
                             add_ticker_tab(
                                 card["ticker"], card["display_t"],
                                 card["company"], card["mkt"], card["exch"],
