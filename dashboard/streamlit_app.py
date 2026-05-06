@@ -1019,69 +1019,56 @@ if st.session_state.active_tab == "home":
         </div>
         """, unsafe_allow_html=True)
 
-        # Render in rows of 5 — TWO passes per row:
-        #   Pass 1: all HTML cards in a st.columns row  (no buttons)
-        #   Pass 2: all Open buttons in a matching st.columns row
-        # This avoids Streamlit's column markdown-flush bug that caused
-        # the 2nd card to render raw HTML when mixed with st.button().
-        rows = [cards[:5], cards[5:]]
-        for row in rows:
-            if not row:
-                continue
-
-            n_cols = len(row)
-
-            # Pass 1 — HTML cards only
-            html_cols = st.columns(n_cols)
-            for col, card in zip(html_cols, row):
+        # Render in rows of 2 — works on both desktop and mobile.
+        # 5 columns is unusable on narrow screens; 2 columns scales cleanly.
+        # Each card uses st.container() to isolate the HTML+button pair,
+        # which avoids Streamlit's column markdown-flush bug without needing
+        # the separate two-pass approach.
+        for i in range(0, len(cards), 2):
+            pair = cards[i:i+2]
+            cols = st.columns(len(pair))
+            for col, card in zip(cols, pair):
                 with col:
-                    st.markdown(f"""
+                    with st.container():
+                        st.markdown(f"""
 <div style="background:{card['sig_bg']};border:1px solid {card['sig_border']}44;
-            border-top:2px solid {card['sig_border']};
-            border-radius:12px;padding:0.85rem 0.8rem;text-align:center;">
-    <div style="font-size:0.85rem;margin-bottom:0.15rem">{card['flag']}</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:0.95rem;
+            border-top:3px solid {card['sig_border']};
+            border-radius:12px;padding:1rem 0.9rem;text-align:center;
+            margin-bottom:0.25rem;">
+    <div style="font-size:0.9rem;margin-bottom:0.2rem">{card['flag']}</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:1rem;
                 font-weight:600;color:#f1f5f9">{card['display_t']}</div>
-    <div style="font-size:0.68rem;color:#64748b;margin-bottom:0.45rem;
+    <div style="font-size:0.72rem;color:#64748b;margin-bottom:0.5rem;
                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
         {card['company'] if card['company'] != card['display_t'] else '&nbsp;'}
     </div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:1.15rem;
+    <div style="font-family:'JetBrains Mono',monospace;font-size:1.25rem;
                 font-weight:700;color:{card['sig_color']}">
         {card['sig_icon']} {card['sig_label']}
     </div>
-    <div style="font-size:0.78rem;color:#94a3b8;margin-top:0.2rem">
+    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem">
         {card['confidence']:.0%} confidence
     </div>
-    <div style="font-size:0.72rem;color:{card['sent_color']};margin-top:0.1rem">
+    <div style="font-size:0.75rem;color:{card['sent_color']};margin-top:0.15rem">
         sentiment {card['sentiment']:+.3f}
     </div>
-    <div style="font-size:0.65rem;color:#475569;margin-top:0.4rem;
-                border-top:1px solid #1a2035;padding-top:0.35rem">
+    <div style="font-size:0.68rem;color:#475569;margin-top:0.5rem;
+                border-top:1px solid #1a2035;padding-top:0.4rem">
         📅 {card['td_label']} &nbsp;·&nbsp; ⏱ {card['age_label']}
     </div>
 </div>
-                    """, unsafe_allow_html=True)
-
-            # Pass 2 — buttons only, same column layout
-            btn_cols = st.columns(n_cols)
-            for col, card in zip(btn_cols, row):
-                with col:
-                    if st.button(
-                        f"Open {card['display_t']}",
-                        key=f"top_sig_{card['ticker']}",
-                        use_container_width=True,
-                        type="secondary",
-                    ):
-                        # Clear the home page signal cache so that when the
-                        # user returns after recalculating, the card for this
-                        # ticker shows the fresh updated_at instead of the
-                        # cached (up to 30 min old) value.
-                        load_top_signals.clear()
-                        add_ticker_tab(
-                            card["ticker"], card["display_t"],
-                            card["company"], card["mkt"], card["exch"],
-                        )
+                        """, unsafe_allow_html=True)
+                        if st.button(
+                            f"Open {card['display_t']}",
+                            key=f"top_sig_{card['ticker']}",
+                            use_container_width=True,
+                            type="secondary",
+                        ):
+                            load_top_signals.clear()
+                            add_ticker_tab(
+                                card["ticker"], card["display_t"],
+                                card["company"], card["mkt"], card["exch"],
+                            )
 
     st.divider()
 
