@@ -50,7 +50,7 @@ Streamlit secrets:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -167,7 +167,7 @@ class FeedbackLogger:
                         "predicted":    int(predicted),
                         "confidence":   round(float(confidence), 4),
                         "sentiment":    round(float(sentiment),  4),
-                        "updated_at":   datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "updated_at":   datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                         "update_count": old_count + 1,
                     }).eq("id", row["id"]).execute()
                     logger.info(
@@ -246,7 +246,7 @@ class FeedbackLogger:
         """Completed predictions (with known actuals)."""
         try:
             client = _get_client()
-            cutoff = (datetime.utcnow() - timedelta(days=days_back)).date().isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).date().isoformat()
             query  = (
                 client.table(self.TABLE)
                 .select("trade_date,ticker,predicted,actual,correct,confidence,sentiment,update_count,updated_at")
@@ -313,7 +313,7 @@ class FeedbackLogger:
         """
         try:
             client  = _get_client()
-            cutoff  = (datetime.utcnow() - timedelta(days=lookback_days)).date().isoformat()
+            cutoff  = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).date().isoformat()
 
             result = (
                 client.table(self.TABLE)
@@ -322,7 +322,10 @@ class FeedbackLogger:
                 .order("updated_at", desc=True)   # newest first so dedup keeps latest
                 .execute()
             )
+            row_count = len(result.data) if result.data else 0
+            logger.info(f"get_top_signals: cutoff={cutoff}, raw_rows={row_count}")
             if not result.data:
+                return pd.DataFrame()
                 return pd.DataFrame()
 
             df = pd.DataFrame(result.data)
@@ -392,7 +395,7 @@ class FeedbackLogger:
             # Use explicit UTC suffix (+00:00) so Supabase compares correctly
             # against the timezone-aware created_at column. Without it, a naive
             # datetime string can silently fail the .lt() filter in PostgREST.
-            orphan_cutoff = (datetime.utcnow() - timedelta(days=keep_days + 3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            orphan_cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days + 3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
             result = (
                 client.table(self.TABLE)
                 .delete()
@@ -438,7 +441,7 @@ class FeedbackLogger:
     @staticmethod
     def _auto_cleanup(client, keep_days=KEEP_DAYS) -> int:
         try:
-            cutoff = (datetime.utcnow() - timedelta(days=keep_days)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
             result = (
                 client.table(FeedbackLogger.TABLE)
                 .delete()
