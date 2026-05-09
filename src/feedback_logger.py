@@ -330,7 +330,7 @@ class FeedbackLogger:
 
             df = pd.DataFrame(result.data)
             df["trade_date"] = pd.to_datetime(df["trade_date"])
-            df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True)
+            df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True, format="mixed")
             df["confidence"] = df["confidence"].astype(float)
             df["sentiment"]  = df["sentiment"].astype(float)
 
