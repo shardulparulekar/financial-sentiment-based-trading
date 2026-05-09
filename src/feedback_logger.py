@@ -109,15 +109,22 @@ class FeedbackLogger:
 
     # ── Write ──────────────────────────────────────────────────────────────────
 
-    def log_prediction(self, ticker, trade_date, predicted, confidence, sentiment) -> bool:
+    def log_prediction(self, ticker, trade_date, predicted, confidence, sentiment,
+                       force: bool = False) -> bool:
         """
         Log or update a prediction for ticker+date.
 
         Logic:
             - No existing row → INSERT
+            - Existing row + force=True → always UPDATE updated_at (dashboard recalc)
             - Existing row + new confidence higher by MIN_CONFIDENCE_DELTA → UPDATE
             - Existing row + sentiment shifted by MIN_SENTIMENT_DELTA → UPDATE
             - Otherwise → skip (existing prediction is better or same)
+
+        force=True is passed by the dashboard when a user explicitly clicks a
+        card to recalculate — we always want to refresh updated_at in that case
+        so the home page card shows the correct freshness timestamp, regardless
+        of whether the new confidence is higher or lower than the batch value.
         """
         try:
             client = _get_client()
@@ -150,6 +157,7 @@ class FeedbackLogger:
                 conf_delta  = float(confidence) - old_conf
                 sent_delta  = abs(float(sentiment) - old_sent)
                 should_update = (
+                    force or                             # dashboard recalc → always refresh
                     conf_delta  >= MIN_CONFIDENCE_DELTA or
                     sent_delta  >= MIN_SENTIMENT_DELTA
                 )
@@ -159,11 +167,11 @@ class FeedbackLogger:
                         "predicted":    int(predicted),
                         "confidence":   round(float(confidence), 4),
                         "sentiment":    round(float(sentiment),  4),
-                        "updated_at":   datetime.utcnow().isoformat(),
+                        "updated_at":   datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                         "update_count": old_count + 1,
                     }).eq("id", row["id"]).execute()
                     logger.info(
-                        f"Updated: {ticker} {trade_date} "
+                        f"{'Force-updated' if force else 'Updated'}: {ticker} {trade_date} "
                         f"conf {old_conf:.2f}→{confidence:.2f} "
                         f"sent {old_sent:+.3f}→{sentiment:+.3f} "
                         f"(update #{old_count + 1})"
