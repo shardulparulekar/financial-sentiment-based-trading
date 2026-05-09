@@ -962,8 +962,14 @@ if st.session_state.active_tab == "home":
     if top_df.empty:
         st.info(
             "No pre-computed signals available yet — the daily batch hasn't run today, "
-            "or Supabase is not configured. Signals appear here after the 13:00 UTC batch."
+            "or Supabase is not configured. Signals appear here after the 09:00 UTC batch."
         )
+        # Surface any hidden error for debugging
+        try:
+            from src.feedback_logger import FeedbackLogger
+            _test = FeedbackLogger().get_top_signals(n=1)
+        except Exception as _e:
+            st.caption(f"⚠️ Debug: {type(_e).__name__}: {_e}")
     else:
         import pytz
         now_utc = datetime.now(pytz.utc)
