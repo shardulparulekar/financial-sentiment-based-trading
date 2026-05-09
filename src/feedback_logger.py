@@ -343,7 +343,7 @@ class FeedbackLogger:
         except EnvironmentError:
             return pd.DataFrame()
         except Exception as e:
-            logger.warning(f"get_top_signals failed: {e}")
+            logger.warning(f"get_top_signals failed: {type(e).__name__}: {e}")
             return pd.DataFrame()
 
     def table_stats(self) -> dict:
