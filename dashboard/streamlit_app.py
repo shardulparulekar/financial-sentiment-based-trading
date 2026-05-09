@@ -1043,13 +1043,19 @@ if st.session_state.active_tab == "home":
 </style>
         """, unsafe_allow_html=True)
 
-        # Render 2 cards per row — works cleanly on all screen sizes.
-        # On desktop the cards are wider but still look good; on mobile
-        # they stack naturally. This is the most reliable Streamlit layout.
-        for i in range(0, len(cards), 2):
-            pair = cards[i:i+2]
+        # ── Expand/collapse state ─────────────────────────────────────────────
+        if "signals_expanded" not in st.session_state:
+            st.session_state.signals_expanded = False
+
+        # Always show top 2 cards (highest confidence — already sorted desc).
+        # Remaining 8 are behind an expand toggle.
+        cards_top  = cards[:2]
+        cards_rest = cards[2:]
+
+        def _render_card_row(card_pair):
+            """Render one row of 2 cards with their Open buttons."""
             cols = st.columns(2)
-            for col, card in zip(cols, pair):
+            for col, card in zip(cols, card_pair):
                 with col:
                     with st.container():
                         st.markdown(f"""
@@ -1073,14 +1079,43 @@ if st.session_state.active_tab == "home":
                             use_container_width=True,
                             type="secondary",
                         ):
+                            load_top_signals.clear()
                             add_ticker_tab(
                                 card["ticker"], card["display_t"],
                                 card["company"], card["mkt"], card["exch"],
                             )
-            # Fill second column if odd number of cards
-            if len(pair) == 1:
+            # Pad with empty column if odd card in last row
+            if len(card_pair) == 1:
                 with cols[1]:
                     st.empty()
+
+        # ── Render top 2 always ────────────────────────────────────────────────
+        _render_card_row(cards_top)
+
+        # ── Expand toggle (only shown if there are more cards) ─────────────────
+        if cards_rest:
+            remaining = len(cards_rest)
+            toggle_label = (
+                f"▲ Show less"
+                if st.session_state.signals_expanded
+                else f"▼ Show {remaining} more signals"
+            )
+            # Centre the toggle button with narrow columns
+            _, btn_col, _ = st.columns([2, 3, 2])
+            with btn_col:
+                if st.button(
+                    toggle_label,
+                    key="signals_toggle",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    st.session_state.signals_expanded = not st.session_state.signals_expanded
+                    st.rerun()
+
+        # ── Render remaining cards if expanded ─────────────────────────────────
+        if st.session_state.signals_expanded and cards_rest:
+            for i in range(0, len(cards_rest), 2):
+                _render_card_row(cards_rest[i:i+2])
 
     st.divider()
 
@@ -1393,6 +1428,7 @@ else:
         _fb.log_prediction(
             ticker=full_ticker, trade_date=_today,
             predicted=signal, confidence=confidence, sentiment=_sent,
+            force=True,   # dashboard recalc → always refresh updated_at
         )
         # Also update yesterday's actual if we have price data
         if len(stock_df) >= 2:
