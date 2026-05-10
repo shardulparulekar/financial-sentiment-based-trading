@@ -1331,6 +1331,405 @@ if st.session_state.active_tab == "home":
             st.info(f"No results found for **'{news_query}'**.")
 
 
+    st.divider()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 💬 SIGNAL CHATBOT
+    # Collapsed by default. Two modes:
+    #   1. Ticker spotlight — user mentions a ticker → show signal card + open btn
+    #   2. Conversational  — market/sentiment questions → HuggingFace Mistral API
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── Build a fast lookup: full_ticker → (market, exchange, display, company) ──
+    _ALL_KNOWN: dict = {}
+    for _m, _cfg in MARKET_CONFIG.items():
+        _sfx = _cfg.get("suffix", "")
+        _all_t = _cfg["tickers"] + _cfg.get("us_adrs", [])
+        _all_n = _cfg["names"]   + _cfg.get("adr_names", [])
+        for _t, _n in zip(_all_t, _all_n):
+            _full = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
+            _ALL_KNOWN[_full.upper()] = (_m, None, _t, _n)
+    for _ex, _ecfg in EU_EXCHANGES.items():
+        _sfx = _ecfg["suffix"]
+        _all_t = _ecfg["tickers"] + _ecfg.get("us_exceptions", [])
+        _all_n = _ecfg["names"]   + _ecfg.get("us_exception_names", [])
+        for _t, _n in zip(_all_t, _all_n):
+            _full = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
+            _ALL_KNOWN[_full.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
+
+    def _find_ticker_in_message(msg: str) -> list[str]:
+        """Return list of known full tickers mentioned in the message."""
+        words = msg.upper().split()
+        found = []
+        for w in words:
+            w_clean = w.strip(".,!?()[]")
+            if w_clean in _ALL_KNOWN:
+                found.append(w_clean)
+        return found
+
+    def _get_signal_for_ticker(full_ticker: str, top_df: pd.DataFrame) -> dict | None:
+        """Return signal data from top_df if available for this ticker."""
+        if top_df.empty:
+            return None
+        match = top_df[top_df["ticker"].str.upper() == full_ticker.upper()]
+        if match.empty:
+            return None
+        row = match.iloc[0]
+        return {
+            "ticker":     full_ticker,
+            "predicted":  int(row["predicted"]),
+            "confidence": float(row["confidence"]),
+            "sentiment":  float(row["sentiment"]),
+            "updated_at": row["updated_at"],
+            "trade_date": row["trade_date"],
+        }
+
+    def _spotlight_html(sig: dict, mkt: str, exch: str | None,
+                        display_t: str, company: str,
+                        top_headlines: list[dict]) -> str:
+        """Build spotlight card HTML for a ticker."""
+        import pytz
+        now_utc   = datetime.now(pytz.utc)
+        is_buy    = sig["predicted"] == 1
+        sig_label = "BUY"  if is_buy else "SELL"
+        sig_color = "#22c55e" if is_buy else "#ef4444"
+        sig_icon  = "▲" if is_buy else "▼"
+        sig_bg    = "rgba(34,197,94,0.07)" if is_buy else "rgba(239,68,68,0.07)"
+        sig_bdr   = "#16a34a" if is_buy else "#dc2626"
+        sent      = sig["sentiment"]
+        sent_lbl  = "bullish" if sent > 0.05 else ("bearish" if sent < -0.05 else "neutral")
+        sent_col  = "#22c55e" if sent > 0.05 else ("#ef4444" if sent < -0.05 else "#94a3b8")
+        flag      = mkt.split(" ")[0] if mkt else "🌐"
+        if exch:
+            flag = exch.split(" ")[0]
+        age_secs  = (now_utc - sig["updated_at"]).total_seconds()
+        age_str   = (f"{int(age_secs//60)}m ago" if age_secs < 3600
+                     else f"{int(age_secs//3600)}h {int((age_secs%3600)//60)}m ago")
+        td_str    = sig["trade_date"].strftime("%d %b %Y") if hasattr(sig["trade_date"], "strftime") else str(sig["trade_date"])
+
+        headline_html = ""
+        if top_headlines:
+            h = top_headlines[0]
+            url   = h.get("url", "#")
+            title = h.get("title", "")[:90] + ("…" if len(h.get("title","")) > 90 else "")
+            src   = h.get("source", "")
+            sentiment_score = h.get("sentiment", 0)
+            h_color = "#22c55e" if sentiment_score > 0.05 else ("#ef4444" if sentiment_score < -0.05 else "#94a3b8")
+            headline_html = f"""
+<div style="margin-top:0.6rem;padding:0.5rem 0.6rem;background:#0d1117;
+            border-radius:8px;border-left:3px solid {h_color};text-align:left;">
+  <div style="font-size:0.7rem;color:#94a3b8">📰 Latest headline</div>
+  <a href="{url}" target="_blank"
+     style="font-size:0.75rem;color:#f1f5f9;text-decoration:none">{title}</a>
+  <div style="font-size:0.65rem;color:#475569;margin-top:0.2rem">{src}</div>
+</div>"""
+
+        return f"""
+<div style="background:{sig_bg};border:1px solid {sig_bdr}44;
+            border-top:3px solid {sig_bdr};border-radius:12px;
+            padding:0.9rem 0.8rem;margin:0.5rem 0;">
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+    <span style="font-size:1rem">{flag}</span>
+    <span style="font-family:monospace;font-size:1rem;font-weight:600;color:#f1f5f9">{display_t}</span>
+    <span style="font-size:0.75rem;color:#64748b">{company if company != display_t else ""}</span>
+  </div>
+  <div style="font-size:1.2rem;font-weight:700;color:{sig_color}">{sig_icon} {sig_label}</div>
+  <div style="font-size:0.78rem;color:#94a3b8;margin-top:0.2rem">
+    {sig["confidence"]:.0%} confidence &nbsp;·&nbsp;
+    <span style="color:{sent_col}">sentiment {sent:+.3f} ({sent_lbl})</span>
+  </div>
+  <div style="font-size:0.65rem;color:#475569;margin-top:0.25rem">
+    📅 {td_str} &nbsp;·&nbsp; ⏱ {age_str}
+  </div>
+  {headline_html}
+</div>"""
+
+    def _call_huggingface(messages: list[dict], context: str) -> str:
+        """Call HuggingFace Inference API with conversation history."""
+        try:
+            import requests as _req
+            try:
+                hf_token = st.secrets["huggingface"]["token"]
+            except Exception:
+                import os
+                hf_token = os.getenv("HUGGINGFACE_TOKEN", "")
+            if not hf_token:
+                return ("⚠️ HuggingFace token not configured. Add `[huggingface]\ntoken = \"hf_xxx\"` "
+                        "to your Streamlit secrets to enable the chatbot.")
+
+            # Build prompt with context + history
+            system = (
+                "You are a helpful financial assistant for Sentiment Signal, "
+                "a FinBERT-powered trading signal app. "
+                "Answer concisely in 2-4 sentences. "
+                "Do not give direct buy/sell financial advice — explain signals and data only. "
+                f"\n\nCurrent market context:\n{context}"
+            )
+            # Format as Mistral instruct prompt
+            prompt = f"<s>[INST] <<SYS>>\n{system}\n<</SYS>>\n\n"
+            # Add last 5 messages for context (stateful memory)
+            history = messages[-5:]
+            for i, msg in enumerate(history[:-1]):
+                if msg["role"] == "user":
+                    prompt += f"{msg['content']} [/INST] "
+                else:
+                    prompt += f"{msg['content']} </s><s>[INST] "
+            # Add current message
+            prompt += f"{history[-1]['content']} [/INST]"
+
+            resp = _req.post(
+                "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3",
+                headers={"Authorization": f"Bearer {hf_token}"},
+                json={
+                    "inputs": prompt,
+                    "parameters": {
+                        "max_new_tokens": 200,
+                        "temperature": 0.4,
+                        "return_full_text": False,
+                    }
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    text = data[0].get("generated_text", "").strip()
+                    # Clean up any trailing incomplete sentence
+                    if text and not text[-1] in ".!?":
+                        text = text.rsplit(".", 1)[0] + "." if "." in text else text
+                    return text or "I couldn't generate a response. Please try again."
+                return "Unexpected response format from the model."
+            elif resp.status_code == 503:
+                return "The AI model is loading (cold start). Please wait 20 seconds and try again."
+            else:
+                return f"Model error ({resp.status_code}). Please try again shortly."
+        except Exception as e:
+            return f"Connection error: {e}"
+
+    # ── Build market context string for HuggingFace prompt ────────────────────
+    def _build_market_context(top_df: pd.DataFrame, sentiment_data: dict) -> str:
+        lines = []
+        # Top signals summary
+        if not top_df.empty:
+            top5 = top_df.head(5)
+            signal_lines = []
+            for _, r in top5.iterrows():
+                direction = "BUY" if int(r["predicted"]) == 1 else "SELL"
+                signal_lines.append(f"{r['ticker']} {direction} {float(r['confidence']):.0%}")
+            lines.append("Top signals: " + ", ".join(signal_lines))
+        # Market sentiment
+        if sentiment_data:
+            sent_lines = []
+            for mkt, data in sentiment_data.items():
+                score = data.get("score", 0)
+                label = data.get("label", "neutral")
+                sent_lines.append(f"{mkt}: {label} ({score:+.3f})")
+            lines.append("Market sentiment: " + " | ".join(sent_lines))
+        return "\n".join(lines) if lines else "No market data currently available."
+
+    # ── Session state init ────────────────────────────────────────────────────
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []       # list of {role, content, type}
+    if "chat_open" not in st.session_state:
+        st.session_state.chat_open = False
+    if "chat_pending_ticker" not in st.session_state:
+        st.session_state.chat_pending_ticker = None  # for disambiguation
+
+    # ── Chatbot expander ──────────────────────────────────────────────────────
+    st.markdown("### 💬 Ask Sentiment Signal")
+    st.caption("Ask about market signals, specific stocks, or sentiment trends.")
+
+    chat_toggle_label = "▲ Close chat" if st.session_state.chat_open else "▼ Open chat"
+    if st.button(chat_toggle_label, key="chat_toggle", type="secondary"):
+        st.session_state.chat_open = not st.session_state.chat_open
+        st.rerun()
+
+    if st.session_state.chat_open:
+
+        # Quick-tap suggestions
+        st.markdown("<div style='margin-bottom:0.5rem'>", unsafe_allow_html=True)
+        q_cols = st.columns(4)
+        suggestions = [
+            "What's the strongest signal today?",
+            "Which markets are bearish?",
+            "Explain the top BUY signal",
+            "Any high-confidence SELL signals?",
+        ]
+        for q_col, suggestion in zip(q_cols, suggestions):
+            with q_col:
+                if st.button(suggestion, key=f"sugg_{suggestion[:20]}",
+                             use_container_width=True, type="secondary"):
+                    st.session_state.chat_history.append(
+                        {"role": "user", "content": suggestion, "type": "text"}
+                    )
+                    st.session_state.chat_pending_ticker = None
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── Chat history display ──────────────────────────────────────────────
+        chat_container = st.container()
+        with chat_container:
+            for msg in st.session_state.chat_history:
+                role    = msg["role"]
+                content = msg["content"]
+                mtype   = msg.get("type", "text")
+
+                if role == "user":
+                    st.markdown(
+                        f"<div style='text-align:right;margin:0.4rem 0'>"
+                        f"<span style='background:#1e3a5f;color:#f1f5f9;"
+                        f"padding:0.4rem 0.8rem;border-radius:12px 12px 0 12px;"
+                        f"font-size:0.85rem;display:inline-block'>{content}</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                elif mtype == "spotlight":
+                    # HTML card stored directly
+                    st.markdown(content, unsafe_allow_html=True)
+                elif mtype == "disambiguation":
+                    st.markdown(
+                        f"<div style='background:#0d1117;border:1px solid #1a2035;"
+                        f"border-radius:12px;padding:0.7rem 0.8rem;margin:0.4rem 0;"
+                        f"font-size:0.82rem;color:#94a3b8'>{content}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"<div style='background:#0d1117;border:1px solid #1a2035;"
+                        f"border-radius:12px;padding:0.7rem 0.8rem;margin:0.4rem 0;"
+                        f"font-size:0.82rem;color:#cbd5e1'>"
+                        f"<span style='color:#60a5fa;font-weight:600'>🤖 </span>{content}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        # ── Process latest user message if not yet answered ───────────────────
+        history = st.session_state.chat_history
+        needs_response = (
+            history and
+            history[-1]["role"] == "user" and
+            (len(history) < 2 or history[-2]["role"] != "assistant" or
+             len(history) % 2 == 1)
+        )
+
+        if needs_response:
+            user_msg = history[-1]["content"]
+            top_df_chat = load_top_signals(n=10)
+
+            with st.spinner("Thinking…"):
+                # Check for ticker mentions
+                found_tickers = _find_ticker_in_message(user_msg)
+
+                if found_tickers:
+                    full_t = found_tickers[0]
+                    mkt, exch, display_t, company = _ALL_KNOWN.get(full_t, (None, None, full_t, full_t))
+
+                    # Get signal data
+                    sig = _get_signal_for_ticker(full_t, top_df_chat)
+
+                    # Get latest headlines for this ticker
+                    try:
+                        from src.data_ingestion import fetch_ticker_news
+                        headlines = fetch_ticker_news(full_t, max_articles=5)
+                    except Exception:
+                        headlines = []
+
+                    if sig and mkt:
+                        # Build spotlight card
+                        card_html = _spotlight_html(sig, mkt, exch, display_t, company, headlines)
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": card_html,
+                            "type": "spotlight",
+                            "ticker_context": full_t,
+                        })
+                    elif mkt:
+                        # Ticker known but no signal yet
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": (f"I don't have a pre-computed signal for <strong>{display_t}</strong> "
+                                       f"in today's batch yet. Click below to run a live analysis."),
+                            "type": "text",
+                            "ticker_context": full_t,
+                        })
+                    else:
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": (f"<strong>{full_t}</strong> isn't in our tracked ticker list. "
+                                       f"You can still analyse it by selecting a market above."),
+                            "type": "text",
+                        })
+                    st.rerun()
+
+                else:
+                    # Conversational — call HuggingFace
+                    sentiment_data = load_market_sentiment()
+                    context = _build_market_context(top_df_chat, sentiment_data)
+                    # Only pass text messages to the API (not HTML spotlight cards)
+                    api_messages = [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in history
+                        if m.get("type", "text") == "text"
+                    ]
+                    response = _call_huggingface(api_messages, context)
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "type": "text",
+                    })
+                    st.rerun()
+
+        # ── Open full analysis buttons for any ticker spotlights ──────────────
+        ticker_messages = [
+            m for m in st.session_state.chat_history
+            if m.get("ticker_context")
+        ]
+        if ticker_messages:
+            st.markdown("<div style='margin-top:0.5rem'>", unsafe_allow_html=True)
+            seen = set()
+            for m in ticker_messages:
+                full_t = m["ticker_context"]
+                if full_t in seen:
+                    continue
+                seen.add(full_t)
+                mkt, exch, display_t, company = _ALL_KNOWN.get(full_t, (None, None, full_t, full_t))
+                if mkt:
+                    if st.button(
+                        f"Open full {display_t} analysis →",
+                        key=f"chat_open_{full_t}",
+                        type="primary",
+                        use_container_width=False,
+                    ):
+                        load_top_signals.clear()
+                        add_ticker_tab(full_t, display_t, company, mkt, exch)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── Input row ─────────────────────────────────────────────────────────
+        st.markdown("<div style='margin-top:0.75rem'>", unsafe_allow_html=True)
+        inp_col, btn_col = st.columns([5, 1])
+        with inp_col:
+            user_input = st.text_input(
+                "chat_input", label_visibility="collapsed",
+                placeholder="Ask about a stock, market, or signal… e.g. 'Tell me about NVDA'",
+                key="chat_input_field",
+            )
+        with btn_col:
+            send_clicked = st.button("Send →", key="chat_send",
+                                     use_container_width=True, type="primary")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if (send_clicked or user_input) and user_input.strip():
+            st.session_state.chat_history.append(
+                {"role": "user", "content": user_input.strip(), "type": "text"}
+            )
+            st.rerun()
+
+        # Clear chat button
+        if st.session_state.chat_history:
+            if st.button("🗑 Clear chat", key="chat_clear", type="secondary"):
+                st.session_state.chat_history = []
+                st.rerun()
+
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1903,3 +2302,4 @@ else:
                 "updates today's prediction, marks feedback rows as retrained, "
                 "and cleans up rows older than 30 days."
             )
+# CHATBOT_PLACEHOLDER
