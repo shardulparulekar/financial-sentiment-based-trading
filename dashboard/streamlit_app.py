@@ -836,6 +836,14 @@ if "sage_pending" not in st.session_state:
 if "sage_msgs"    not in st.session_state:
     st.session_state.sage_msgs    = []
 
+# ── Handle sage_msg query param at top level (works on any tab) ──────────────
+_sage_msg_qp = st.query_params.get("sage_msg")
+if _sage_msg_qp:
+    import urllib.parse as _up_qp
+    st.session_state.sage_pending = _up_qp.unquote(_sage_msg_qp)
+    st.query_params.clear()
+    st.rerun()
+
 if st.session_state.sage_pending:
     _pending = st.session_state.sage_pending
     st.session_state.sage_pending = None
@@ -1313,10 +1321,11 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     t.innerHTML = '<span></span><span></span><span></span>';
     msgs.appendChild(t); scroll2b();
     setTimeout(function() {{
+      // Navigate parent to same URL + sage_msg param — triggers Streamlit rerun
       var url = new URL(window.parent.location.href);
-      url.searchParams.set('sage_msg', encodeURIComponent(text));
+      url.searchParams.set('sage_msg', text);
       window.parent.location.href = url.toString();
-    }}, 380);
+    }}, 200);
   }}
 
   fab.addEventListener('click', toggle);
@@ -1383,19 +1392,13 @@ st.divider()
 
 if st.session_state.active_tab == "home":
 
-    # ── Sage query param handlers ─────────────────────────────────────────────
+    # ── Sage query param handlers (sage_msg handled at top-level now) ─────────
     _sage_open = st.query_params.get("sage_open")
-    _sage_msg  = st.query_params.get("sage_msg")
     if _sage_open:
         st.query_params.clear()
         _sm, _se, _sd, _sc = resolve_market_for_ticker(_sage_open)
         load_top_signals.clear()
         add_ticker_tab(_sage_open, _sd, _sc, _sm, _se)
-        st.rerun()
-    if _sage_msg:
-        import urllib.parse as _up
-        st.session_state.sage_pending = _up.unquote(_sage_msg)
-        st.query_params.clear()
         st.rerun()
 
     # ── Weekend / market closed banner ───────────────────────────────────────
