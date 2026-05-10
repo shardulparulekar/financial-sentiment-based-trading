@@ -988,28 +988,34 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
 # ── Sage: CSS to position the components.html iframe ─────────────────────────
 import streamlit.components.v1 as _comp_sage
 
-# Anchor the iframe fixed at centre-right. No transform — JS only changes w/h.
+# Anchor the iframe fixed at right-centre. JS only changes w/h/top — CSS locks it to right edge.
 st.markdown("""
 <style>
-/* Sage FAB: fixed centre-right when closed. JS moves to top:0 / full height when open. */
-[data-testid="stVerticalBlock"] iframe[height="80"] {
+/* ── Sage iframe: always fixed to the RIGHT edge, vertically centred when closed ── */
+[data-testid="stCustomComponentV1"] iframe {
     position: fixed !important;
     right: 0 !important;
     top: 50vh !important;
-    margin-top: -40px !important;   /* half of 80px to truly centre */
+    transform: translateY(-50%) !important;
+    width: 80px !important;
+    height: 80px !important;
     z-index: 99999 !important;
     border: none !important;
     background: transparent !important;
-    overflow: visible !important;
-    transition: width 0.28s cubic-bezier(.4,0,.2,1),
+    overflow: hidden !important;
+    transition: width  0.28s cubic-bezier(.4,0,.2,1),
                 height 0.28s cubic-bezier(.4,0,.2,1),
-                top 0.28s cubic-bezier(.4,0,.2,1),
-                margin-top 0.28s cubic-bezier(.4,0,.2,1) !important;
+                top    0.28s cubic-bezier(.4,0,.2,1),
+                transform 0.28s cubic-bezier(.4,0,.2,1) !important;
 }
-/* When Sage panel is open, push main content left like a sidebar */
+/* Push main content right padding so it doesn't hide under the panel */
 body.sage-open .block-container {
     padding-right: 26vw !important;
     transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
+}
+/* Ensure the page itself can scroll independently */
+html, body {
+    overflow-y: auto !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1037,7 +1043,7 @@ _sage_widget = f"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 * {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
-html,body {{ background:transparent; overflow:visible; width:80px; height:80px; }}
+html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }}
 
 /* ── FAB button ── */
 #fab {{
@@ -1254,23 +1260,24 @@ html,body {{ background:transparent; overflow:visible; width:80px; height:80px; 
   ];
 
   // Resize the iframe and toggle FAB/panel visibility.
-  // NO transform manipulation — CSS handles the fixed position anchor.
+  // CSS anchors to right:0 always. We only adjust top/transform/size here.
   function setSize(o) {{
     var fe = window.frameElement;
     if (!fe) return;
     if (o) {{
-      // Full viewport: panel becomes a true sidebar
-      fe.style.width    = '25vw';
-      fe.style.minWidth = '300px';
-      fe.style.height   = '100vh';
-      fe.style.top      = '0';
-      fe.style.marginTop = '0';
+      // Open: full-height sidebar flush to the right edge
+      fe.style.width     = '25vw';
+      fe.style.minWidth  = '300px';
+      fe.style.height    = '100vh';
+      fe.style.top       = '0';
+      fe.style.transform = 'none';
     }} else {{
-      fe.style.width    = '80px';
-      fe.style.minWidth = '';
-      fe.style.height   = '80px';
-      fe.style.top      = '50vh';
-      fe.style.marginTop = '-40px';
+      // Closed: 80x80 FAB, vertically centred on right edge
+      fe.style.width     = '80px';
+      fe.style.minWidth  = '';
+      fe.style.height    = '80px';
+      fe.style.top       = '50vh';
+      fe.style.transform = 'translateY(-50%)';
     }}
   }}
 
@@ -1332,7 +1339,7 @@ html,body {{ background:transparent; overflow:visible; width:80px; height:80px; 
 </body>
 </html>"""
 
-_comp_sage.html(_sage_widget, height=80, scrolling=False)
+_comp_sage.html(_sage_widget, height=80, scrolling=True)
 
 
 
