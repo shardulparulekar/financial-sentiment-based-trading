@@ -949,36 +949,48 @@ if st.session_state.sage_pending:
                 _system = ("You are Sage, a concise financial signal assistant. "
                            "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
                            f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-                # Use Zephyr-7B — free, ungated, no licence approval needed
-                # Prompt format: <|system|>\n...<|user|>\n...<|assistant|>\n
-                _prompt = f"<|system|>\n{_system}\n"
-                for _hm in st.session_state.sage_msgs[-6:]:
-                    _hr = "user" if _hm["role"] == "user" else "assistant"
-                    _prompt += f"<|{_hr}|>\n{_hm['content']}\n"
-                _prompt += "<|assistant|>\n"
+                # Use Mistral-7B-Instruct-v0.2 — fast, free, ungated on HF
+                # Prompt format: <s>[INST] system + user [/INST] assistant
+                _hist_turns = st.session_state.sage_msgs[-6:]
+                _prompt = f"<s>[INST] {_system}\n\n"
+                for _i, _hm in enumerate(_hist_turns):
+                    if _hm["role"] == "user":
+                        if _i == 0:
+                            _prompt += f"{_hm['content']} [/INST] "
+                        else:
+                            _prompt += f"[INST] {_hm['content']} [/INST] "
+                    else:
+                        _prompt += f"{_hm['content']} </s>"
+                # If no history yet, close the first INST
+                if not _hist_turns:
+                    _prompt += f"{_pending} [/INST] "
                 _resp = _rq.post(
-                    "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
+                    "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
                     headers={"Authorization": f"Bearer {_hf}"},
                     json={"inputs": _prompt, "parameters": {
                         "max_new_tokens": 200,
                         "temperature": 0.4,
                         "return_full_text": False,
-                        "stop": ["<|user|>", "<|system|>", "</s>"]}},
-                    timeout=60)
+                        "stop": ["[INST]", "</s>"]}},
+                    timeout=45)
                 if _resp.status_code == 200:
                     _data = _resp.json()
                     _text = (_data[0].get("generated_text", "") if isinstance(_data, list) and _data else "").strip()
-                    # Strip any trailing stop tokens
-                    for _s2 in ["<|user|>", "<|system|>", "</s>"]:
+                    for _s2 in ["[INST]", "</s>"]:
                         if _s2 in _text:
                             _text = _text[:_text.index(_s2)].strip()
                     _reply = _text or "I couldn't generate a response."
                 elif _resp.status_code == 503:
-                    _reply = "Model is warming up — please try again in ~30 seconds."
+                    # Model loading — get estimated wait from response if available
+                    try:
+                        _wait = _resp.json().get("estimated_time", 20)
+                        _reply = f"⏳ Model is warming up (~{int(_wait)}s). Please send your message again in a moment."
+                    except Exception:
+                        _reply = "⏳ Model is warming up. Please try again in ~20 seconds."
                 elif _resp.status_code == 403:
-                    _reply = "HuggingFace token doesn't have access to this model. Check your token permissions."
+                    _reply = "🔑 HuggingFace token lacks access. Check token permissions at huggingface.co/settings/tokens."
                 else:
-                    _reply = f"Model error ({_resp.status_code}): {_resp.text[:120]}"
+                    _reply = f"⚠️ Model error ({_resp.status_code}): {_resp.text[:200]}"
         except Exception as _e:
             _reply = f"Error: {_e}"
 
@@ -1018,7 +1030,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 
 /* ── FAB ── */
 #fab {{
-    position:fixed; bottom:5rem; right:1.2rem;
+    position:fixed; bottom:14px; right:14px;
     width:72px; height:72px; border-radius:18px; cursor:pointer;
     border:1.5px solid rgba(56,189,248,0.55);
     background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
@@ -1050,7 +1062,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     text-shadow:0 0 8px rgba(56,189,248,0.7);
 }}
 #ring {{
-    position:fixed; bottom:5rem; right:1.2rem;
+    position:fixed; bottom:14px; right:14px;
     width:72px; height:72px; border-radius:20px;
     border:2px solid rgba(56,189,248,0.4);
     animation:pulse 3s ease-out infinite; pointer-events:none;
@@ -1065,10 +1077,12 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 /* ── Panel: fixed right, full height, own scroll ── */
 #panel {{
     display:none;
-    position:fixed; top:0; right:0; bottom:0;
+    position:fixed; top:0; right:0; bottom:48px;
     width:320px;
     background:#080f1e;
     border-left:1px solid rgba(56,189,248,0.22);
+    border-bottom:1px solid rgba(56,189,248,0.12);
+    border-bottom-left-radius:12px;
     flex-direction:column;
     box-shadow:-8px 0 48px rgba(0,0,0,0.85);
     overflow:hidden;
@@ -1209,7 +1223,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     // Remove from normal flow entirely
     fe.style.cssText = [
       'position:fixed',
-      'bottom:4.5rem',
+      'bottom:3.5rem',
       'right:0',
       'width:100px',
       'height:100px',
@@ -1249,7 +1263,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     }} else {{
       fe.style.width    = '100px';
       fe.style.height   = '100px';
-      fe.style.bottom   = '4.5rem';
+      fe.style.bottom   = '3.5rem';
       fe.style.right    = '0';
       fe.style.overflow = 'visible';
     }}
