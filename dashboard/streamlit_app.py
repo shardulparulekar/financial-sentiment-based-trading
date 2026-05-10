@@ -1018,7 +1018,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 
 /* ── FAB ── */
 #fab {{
-    position:fixed; bottom:5rem; right:1rem;
+    position:fixed; bottom:5rem; right:1.2rem;
     width:72px; height:72px; border-radius:18px; cursor:pointer;
     border:1.5px solid rgba(56,189,248,0.55);
     background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
@@ -1050,7 +1050,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     text-shadow:0 0 8px rgba(56,189,248,0.7);
 }}
 #ring {{
-    position:fixed; bottom:5rem; right:1rem;
+    position:fixed; bottom:5rem; right:1.2rem;
     width:72px; height:72px; border-radius:20px;
     border:2px solid rgba(56,189,248,0.4);
     animation:pulse 3s ease-out infinite; pointer-events:none;
@@ -1210,9 +1210,9 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     fe.style.cssText = [
       'position:fixed',
       'bottom:4.5rem',
-      'right:1rem',
-      'width:80px',
-      'height:80px',
+      'right:0',
+      'width:100px',
+      'height:100px',
       'border:none',
       'background:transparent',
       'z-index:99999',
@@ -1247,10 +1247,11 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
       fe.style.bottom = '0';
       fe.style.right  = '0';
     }} else {{
-      fe.style.width  = '80px';
-      fe.style.height = '80px';
-      fe.style.bottom = '4.5rem';
-      fe.style.right  = '1rem';
+      fe.style.width    = '100px';
+      fe.style.height   = '100px';
+      fe.style.bottom   = '4.5rem';
+      fe.style.right    = '0';
+      fe.style.overflow = 'visible';
     }}
   }}
 
