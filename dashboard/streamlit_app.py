@@ -949,39 +949,42 @@ if st.session_state.sage_pending:
                 _system = ("You are Sage, a concise financial signal assistant. "
                            "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
                            f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-                # Use Mistral-7B-Instruct-v0.2 — fast, free, ungated on HF
-                # Prompt format: <s>[INST] system + user [/INST] assistant
+                # Build Mistral-7B-Instruct-v0.2 prompt — [INST]...[/INST] format
                 _hist_turns = st.session_state.sage_msgs[-6:]
-                _prompt = f"<s>[INST] {_system}\n\n"
-                for _i, _hm in enumerate(_hist_turns):
-                    if _hm["role"] == "user":
-                        if _i == 0:
-                            _prompt += f"{_hm['content']} [/INST] "
-                        else:
-                            _prompt += f"[INST] {_hm['content']} [/INST] "
-                    else:
+                _prompt = f"<s>[INST] {_system}\n\n{_pending} [/INST] "
+                for _hm in _hist_turns:
+                    if _hm["role"] == "assistant":
                         _prompt += f"{_hm['content']} </s>"
-                # If no history yet, close the first INST
-                if not _hist_turns:
-                    _prompt += f"{_pending} [/INST] "
-                _resp = _rq.post(
-                    "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
-                    headers={"Authorization": f"Bearer {_hf}"},
-                    json={"inputs": _prompt, "parameters": {
-                        "max_new_tokens": 200,
-                        "temperature": 0.4,
-                        "return_full_text": False,
-                        "stop": ["[INST]", "</s>"]}},
-                    timeout=45)
+                    else:
+                        _prompt += f"[INST] {_hm['content']} [/INST] "
+
+                # Run the HF call in a thread so Streamlit's WebSocket
+                # keepalive pings are answered and the connection stays alive.
+                import concurrent.futures as _cf
+                def _call_hf():
+                    return _rq.post(
+                        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+                        headers={"Authorization": f"Bearer {_hf}"},
+                        json={"inputs": _prompt, "parameters": {
+                            "max_new_tokens": 200,
+                            "temperature": 0.4,
+                            "return_full_text": False,
+                            "stop": ["[INST]", "</s>", "\n\n"]}},
+                        timeout=60)
+
+                with st.spinner("Sage is thinking…"):
+                    with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                        _future = _ex.submit(_call_hf)
+                        _resp   = _future.result(timeout=65)
+
                 if _resp.status_code == 200:
                     _data = _resp.json()
                     _text = (_data[0].get("generated_text", "") if isinstance(_data, list) and _data else "").strip()
-                    for _s2 in ["[INST]", "</s>"]:
+                    for _s2 in ["[INST]", "</s>", "<s>"]:
                         if _s2 in _text:
                             _text = _text[:_text.index(_s2)].strip()
                     _reply = _text or "I couldn't generate a response."
                 elif _resp.status_code == 503:
-                    # Model loading — get estimated wait from response if available
                     try:
                         _wait = _resp.json().get("estimated_time", 20)
                         _reply = f"⏳ Model is warming up (~{int(_wait)}s). Please send your message again in a moment."
