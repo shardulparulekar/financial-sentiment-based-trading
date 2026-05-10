@@ -1332,353 +1332,540 @@ if st.session_state.active_tab == "home":
 
 
 
+
+
     # ══════════════════════════════════════════════════════════════════════════
-    # 💬 SIGNAL CHATBOT — floating bottom-right panel (Meta AI style)
+    # 💬 SAGE — floating chat assistant (fixed bottom-right, overlay panel)
+    # Implemented via components.html so it stays fixed on scroll.
+    # Communicates back to Streamlit via ?sage_open=TICKER query param.
     # ══════════════════════════════════════════════════════════════════════════
+
+    # ── Handle incoming messages and ticker opens from Sage iframe ────────────
+    _sage_open = st.query_params.get("sage_open")
+    _sage_msg  = st.query_params.get("sage_msg")
+
+    if _sage_open:
+        st.query_params.clear()
+        _sm, _se, _sd, _sc = resolve_market_for_ticker(_sage_open)
+        load_top_signals.clear()
+        add_ticker_tab(_sage_open, _sd, _sc, _sm, _se)
+        st.rerun()
+
+    if _sage_msg:
+        import urllib.parse as _up
+        _decoded = _up.unquote(_sage_msg)
+        st.query_params.clear()
+        st.session_state.sage_pending = _decoded
+        st.rerun()
 
     # ── Build ticker lookup ────────────────────────────────────────────────────
-    _ALL_KNOWN: dict = {}
+    _SAGE_KNOWN: dict = {}
     for _m, _cfg in MARKET_CONFIG.items():
-        _sfx  = _cfg.get("suffix", "")
-        _at   = _cfg["tickers"] + _cfg.get("us_adrs", [])
-        _an   = _cfg["names"]   + _cfg.get("adr_names", [])
-        for _t, _n in zip(_at, _an):
+        _sfx = _cfg.get("suffix", "")
+        for _t, _n in zip(_cfg["tickers"] + _cfg.get("us_adrs", []),
+                          _cfg["names"]   + _cfg.get("adr_names", [])):
             _full = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
-            _ALL_KNOWN[_full.upper()] = (_m, None, _t, _n)
+            _SAGE_KNOWN[_full.upper()] = (_m, None, _t, _n)
     for _ex, _ecfg in EU_EXCHANGES.items():
         _sfx = _ecfg["suffix"]
-        _at  = _ecfg["tickers"] + _ecfg.get("us_exceptions", [])
-        _an  = _ecfg["names"]   + _ecfg.get("us_exception_names", [])
-        for _t, _n in zip(_at, _an):
+        for _t, _n in zip(_ecfg["tickers"] + _ecfg.get("us_exceptions", []),
+                          _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
             _full = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
-            _ALL_KNOWN[_full.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
+            _SAGE_KNOWN[_full.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
 
-    def _find_ticker_in_message(msg: str) -> list[str]:
-        words = msg.upper().split()
+    def _sage_find_ticker(msg: str) -> list[str]:
         found = []
-        for w in words:
-            w_clean = w.strip(".,!?()[]'\"")
-            if w_clean in _ALL_KNOWN and w_clean not in found:
-                found.append(w_clean)
+        for w in msg.upper().split():
+            w = w.strip(".,!?()[]'\"")
+            if w in _SAGE_KNOWN and w not in found:
+                found.append(w)
         return found
 
-    def _get_signal_for_ticker(full_ticker: str, top_df) -> dict | None:
+    def _sage_signal(full_t: str, top_df) -> dict | None:
         if top_df is None or top_df.empty:
             return None
-        match = top_df[top_df["ticker"].str.upper() == full_ticker.upper()]
-        if match.empty:
-            return None
-        row = match.iloc[0]
-        return {
-            "ticker":     full_ticker,
-            "predicted":  int(row["predicted"]),
-            "confidence": float(row["confidence"]),
-            "sentiment":  float(row["sentiment"]),
-            "updated_at": row["updated_at"],
-            "trade_date": row["trade_date"],
+        m = top_df[top_df["ticker"].str.upper() == full_t.upper()]
+        return None if m.empty else {
+            "predicted":  int(m.iloc[0]["predicted"]),
+            "confidence": float(m.iloc[0]["confidence"]),
+            "sentiment":  float(m.iloc[0]["sentiment"]),
+            "updated_at": m.iloc[0]["updated_at"],
+            "trade_date": m.iloc[0]["trade_date"],
         }
 
-    def _live_signal_for_ticker(full_ticker: str, mkt: str, exch: str | None) -> dict | None:
-        """Fetch live signal for a ticker not in today's batch."""
+    def _sage_live(full_t: str, mkt: str, exch) -> dict | None:
         try:
-            from src.data_ingestion  import DataIngestion
-            from src.sentiment_model import SentimentModel
+            from src.data_ingestion      import DataIngestion
+            from src.sentiment_model     import SentimentModel
             from src.feature_engineering import FeatureEngineer
-            import numpy as np
             import pytz
-
-            ingestion = DataIngestion()
-            model     = SentimentModel()
-            fe        = FeatureEngineer()
-
-            articles = ingestion.fetch_news(full_ticker, market=mkt, exchange=exch)
-            if not articles:
-                return None
-
-            scored = model.score_articles(articles)
-            if not scored:
-                return None
-
-            features = fe.build_features(scored)
-            if features is None or features.empty:
-                return None
-
-            last    = features.iloc[-1]
-            score   = float(last.get("mean_score", 0))
-            conf    = min(abs(score) * 2 + 0.5, 0.99)
-            pred    = 1 if score > 0 else -1
-
-            now = datetime.now(pytz.utc)
-            return {
-                "ticker":     full_ticker,
-                "predicted":  pred,
-                "confidence": conf,
-                "sentiment":  score,
-                "updated_at": now,
-                "trade_date": now,
-                "live":       True,
-            }
+            articles = DataIngestion().fetch_news(full_t, market=mkt, exchange=exch)
+            if not articles: return None
+            scored   = SentimentModel().score_articles(articles)
+            if not scored: return None
+            features = FeatureEngineer().build_features(scored)
+            if features is None or features.empty: return None
+            last  = features.iloc[-1]
+            score = float(last.get("mean_score", 0))
+            return {"predicted": 1 if score > 0 else -1,
+                    "confidence": min(abs(score)*2+0.5, 0.99),
+                    "sentiment": score,
+                    "updated_at": datetime.now(pytz.utc),
+                    "trade_date": datetime.now(pytz.utc), "live": True}
         except Exception:
             return None
 
-    def _spotlight_text(sig: dict, display_t: str, company: str,
-                        mkt: str, exch: str | None) -> str:
-        """Return plain-text spotlight summary for chat bubble."""
+    def _sage_spotlight(sig: dict, display_t: str, company: str,
+                        mkt: str, exch, full_t: str) -> str:
         import pytz
-        now_utc   = datetime.now(pytz.utc)
-        is_buy    = sig["predicted"] == 1
-        direction = "▲ BUY" if is_buy else "▼ SELL"
-        sent      = sig["sentiment"]
-        sent_lbl  = "bullish" if sent > 0.05 else ("bearish" if sent < -0.05 else "neutral")
-        age_secs  = (now_utc - sig["updated_at"]).total_seconds()
-        age_str   = (f"{int(age_secs//60)}m ago" if age_secs < 3600
-                     else f"{int(age_secs//3600)}h {int((age_secs%3600)//60)}m ago")
-        flag      = mkt.split(" ")[0] if mkt else "🌐"
-        if exch:
-            flag = exch.split(" ")[0]
-        live_tag  = " · live" if sig.get("live") else ""
+        now   = datetime.now(pytz.utc)
+        is_up = sig["predicted"] == 1
+        icon  = "▲" if is_up else "▼"
+        lbl   = "BUY" if is_up else "SELL"
+        col   = "#22c55e" if is_up else "#ef4444"
+        s     = sig["sentiment"]
+        slbl  = "bullish" if s > 0.05 else ("bearish" if s < -0.05 else "neutral")
+        secs  = (now - sig["updated_at"]).total_seconds()
+        age   = (f"{int(secs//60)}m ago" if secs < 3600
+                 else f"{int(secs//3600)}h {int((secs%3600)//60)}m ago")
+        flag  = (exch or mkt or "").split(" ")[0]
+        live  = " · live" if sig.get("live") else ""
+        open_url = f"?sage_open={full_t}"
         return (
-            f"{flag} **{display_t}** ({company})\n"
-            f"{direction} · {sig['confidence']:.0%} confidence\n"
-            f"Sentiment: {sent_lbl} ({sent:+.3f})\n"
-            f"_{age_str}{live_tag}_"
+            f"<div style='border-top:2px solid {col};border-radius:8px;"
+            f"padding:0.6rem 0.7rem;background:rgba(255,255,255,0.03);margin:0.3rem 0'>"
+            f"<div style='font-size:0.78rem;color:#94a3b8'>{flag} {display_t}"
+            f"<span style='color:#475569'> · {company}</span></div>"
+            f"<div style='font-size:1rem;font-weight:700;color:{col}'>{icon} {lbl}</div>"
+            f"<div style='font-size:0.72rem;color:#94a3b8;margin-top:0.1rem'>"
+            f"{sig['confidence']:.0%} confidence · {slbl} ({s:+.3f})</div>"
+            f"<div style='font-size:0.65rem;color:#475569;margin-top:0.15rem'>"
+            f"⏱ {age}{live}</div>"
+            f"<a href='{open_url}' style='display:inline-block;margin-top:0.4rem;"
+            f"background:#1e3a5f;color:#60a5fa;font-size:0.72rem;padding:0.25rem 0.6rem;"
+            f"border-radius:6px;text-decoration:none'>📊 Open full analysis →</a>"
+            f"</div>"
         )
 
-    def _call_hf(messages: list[dict], context: str) -> str:
+    def _sage_hf(messages: list[dict], context: str) -> str:
         try:
-            import requests as _req
-            try:
-                hf_token = st.secrets["huggingface"]["token"]
+            import requests as _rq
+            try:    hf = st.secrets["huggingface"]["token"]
             except Exception:
-                import os
-                hf_token = os.getenv("HUGGINGFACE_TOKEN", "")
-            if not hf_token:
-                return ("⚠️ HuggingFace token not configured.\n"
-                        "Add `[huggingface]\ntoken = \"hf_xxx\"` to your Streamlit secrets.")
-
+                import os; hf = os.getenv("HUGGINGFACE_TOKEN","")
+            if not hf:
+                return ("⚠️ HuggingFace token not configured. "
+                        "Add [huggingface]\ntoken = \"hf_xxx\" to Streamlit secrets.")
             system = (
-                "You are a concise financial signal assistant for Sentiment Signal, "
-                "a FinBERT-powered trading app. Answer in 2-3 sentences max. "
-                "Never give direct investment advice — explain signals and data only.\n\n"
-                f"Current context:\n{context}"
+                "You are Sage, a concise financial signal assistant for Sentiment Signal. "
+                "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
+                f"Context:\n{context}"
             )
-            # Build Llama-3 instruct format
             prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system}<|eot_id|>"
-            for msg in messages[-6:]:
-                role    = "user" if msg["role"] == "user" else "assistant"
-                prompt += f"<|start_header_id|>{role}<|end_header_id|>\n{msg['content']}<|eot_id|>"
+            for m in messages[-6:]:
+                r = "user" if m["role"]=="user" else "assistant"
+                prompt += f"<|start_header_id|>{r}<|end_header_id|>\n{m['content']}<|eot_id|>"
             prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
-
-            resp = _req.post(
+            resp = _rq.post(
                 "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
-                headers={"Authorization": f"Bearer {hf_token}"},
-                json={
-                    "inputs": prompt,
-                    "parameters": {
-                        "max_new_tokens": 180,
-                        "temperature": 0.4,
-                        "return_full_text": False,
-                        "stop": ["<|eot_id|>", "<|start_header_id|>"],
-                    }
-                },
+                headers={"Authorization": f"Bearer {hf}"},
+                json={"inputs": prompt, "parameters": {
+                    "max_new_tokens": 160, "temperature": 0.4,
+                    "return_full_text": False,
+                    "stop": ["<|eot_id|>","<|start_header_id|>"]}},
                 timeout=30,
             )
             if resp.status_code == 200:
                 data = resp.json()
-                if isinstance(data, list) and data:
-                    text = data[0].get("generated_text", "").strip()
-                    # Trim at stop tokens if model didn't stop cleanly
-                    for stop in ["<|eot_id|>", "<|start_header_id|>"]:
-                        if stop in text:
-                            text = text[:text.index(stop)].strip()
-                    return text or "I couldn't generate a response. Please try again."
-                return "Unexpected response from model."
+                text = (data[0].get("generated_text","") if isinstance(data,list) and data else "").strip()
+                for s in ["<|eot_id|>","<|start_header_id|>"]:
+                    text = text[:text.index(s)].strip() if s in text else text
+                return text or "I couldn't generate a response. Please try again."
             elif resp.status_code == 503:
-                return "The AI model is loading (cold start ~20s). Please try again shortly."
+                return "Model is loading (cold start). Try again in ~20 seconds."
             elif resp.status_code == 404:
-                return "AI model currently unavailable. Your ticker spotlight above still works."
+                return "AI model currently unavailable. Ticker spotlights still work — just type a ticker symbol."
             else:
-                return f"Model error ({resp.status_code}). Please try again shortly."
+                return f"Model error ({resp.status_code}). Please try again."
         except Exception as e:
             return f"Connection error: {e}"
 
-    def _build_context(top_df, sentiment_data: dict) -> str:
+    def _sage_context(top_df, sentiment_data: dict) -> str:
         lines = []
         if top_df is not None and not top_df.empty:
-            top5 = top_df.head(5)
-            sigs  = []
-            for _, r in top5.iterrows():
-                d = "BUY" if int(r["predicted"]) == 1 else "SELL"
-                sigs.append(f"{r['ticker']} {d} {float(r['confidence']):.0%}")
+            sigs = [f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                    for _, r in top_df.head(5).iterrows()]
             lines.append("Top signals: " + ", ".join(sigs))
         if sentiment_data:
-            sent = []
-            for mk, data in sentiment_data.items():
-                sent.append(f"{mk}: {data.get('label','?')} ({data.get('score',0):+.3f})")
-            lines.append("Sentiment: " + " | ".join(sent))
-        return "\n".join(lines) or "No market data available."
+            lines.append("Sentiment: " + " | ".join(
+                f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                for mk, d in sentiment_data.items()))
+        return "\n".join(lines) or "No data."
 
     # ── Session state ─────────────────────────────────────────────────────────
-    if "chat_msgs"   not in st.session_state: st.session_state.chat_msgs   = []
-    if "chat_open"   not in st.session_state: st.session_state.chat_open   = False
-    if "chat_input"  not in st.session_state: st.session_state.chat_input  = ""
-    if "chat_tickers" not in st.session_state: st.session_state.chat_tickers = {}
+    if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
+    if "sage_open"    not in st.session_state: st.session_state.sage_open    = False
+    if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
+    if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
 
-    # ── Handle send (from text input or suggestion buttons) ───────────────────
-    def _handle_send(user_text: str):
-        if not user_text.strip():
-            return
-        st.session_state.chat_msgs.append({"role": "user", "content": user_text.strip()})
-        st.session_state.chat_input = ""
-
-        top_df_c      = load_top_signals(n=10)
-        sentiment_data = load_market_sentiment()
-        found_tickers = _find_ticker_in_message(user_text)
-
-        if found_tickers:
-            full_t = found_tickers[0]
-            mkt, exch, display_t, company = _ALL_KNOWN.get(full_t, (None, None, full_t, full_t))
-
-            # Try pre-computed first, then live
-            sig = _get_signal_for_ticker(full_t, top_df_c)
+    # Process any pending message (set by JS postMessage bridge)
+    if st.session_state.sage_pending:
+        _pending = st.session_state.sage_pending
+        st.session_state.sage_pending = None
+        top_df_s = load_top_signals(n=10)
+        sent_s   = load_market_sentiment()
+        found    = _sage_find_ticker(_pending)
+        if found:
+            full_t = found[0]
+            mkt,exch,dt,co = _SAGE_KNOWN.get(full_t,(None,None,full_t,full_t))
+            sig = _sage_signal(full_t, top_df_s)
             if not sig and mkt:
-                with st.spinner(f"Fetching live signal for {display_t}…"):
-                    sig = _live_signal_for_ticker(full_t, mkt, exch)
-
+                sig = _sage_live(full_t, mkt, exch)
             if sig and mkt:
-                reply = _spotlight_text(sig, display_t, company, mkt, exch)
-                st.session_state.chat_tickers[full_t] = (mkt, exch, display_t, company)
+                reply = _sage_spotlight(sig, dt, co, mkt, exch, full_t)
+                st.session_state.sage_tickers[full_t] = (mkt,exch,dt,co)
             elif mkt:
-                reply = f"Couldn't fetch a live signal for **{display_t}** right now. Try opening the full analysis tab."
-                st.session_state.chat_tickers[full_t] = (mkt, exch, display_t, company)
+                reply = f"Couldn't fetch a live signal for <b>{dt}</b> right now."
+                st.session_state.sage_tickers[full_t] = (mkt,exch,dt,co)
             else:
-                reply = f"**{full_t}** isn't in our tracked list. You can still analyse it by selecting a market in the Analyse a Stock section."
-
-            st.session_state.chat_msgs.append({"role": "assistant", "content": reply})
+                reply = f"<b>{full_t}</b> isn't in our tracked list."
         else:
-            context = _build_context(top_df_c, sentiment_data)
-            api_msgs = [{"role": m["role"], "content": m["content"]}
-                        for m in st.session_state.chat_msgs]
-            reply = _call_hf(api_msgs, context)
-            st.session_state.chat_msgs.append({"role": "assistant", "content": reply})
+            api_msgs = [{"role":m["role"],"content":m["content"]}
+                        for m in st.session_state.sage_msgs
+                        if "<div" not in m.get("content","")]
+            reply = _sage_hf(api_msgs, _sage_context(top_df_s, sent_s))
+        st.session_state.sage_msgs.append({"role":"assistant","content":reply})
 
-    # ── Render chatbot UI (floating panel via CSS + Streamlit widgets) ─────────
-    # We inject a fixed-position container via CSS targeting a wrapper div,
-    # then place Streamlit widgets inside it using a sidebar-like column trick.
+    # ── Build chat history HTML ───────────────────────────────────────────────
+    history_html = ""
+    for msg in st.session_state.sage_msgs[-12:]:
+        c = msg["content"]
+        if msg["role"] == "user":
+            history_html += (
+                f"<div class='msg user'>{c}</div>"
+            )
+        else:
+            history_html += (
+                f"<div class='msg bot'>{c}</div>"
+            )
 
-    # Floating toggle button — fixed bottom-right
-    st.markdown("""
+    # ── Sage avatar SVG (base64-encoded for use in CSS/HTML) ──────────────────
+    sage_svg_raw = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 56'>
+  <defs>
+    <radialGradient id='bg' cx='50%' cy='50%' r='50%'>
+      <stop offset='0%' stop-color='%230f2744'/>
+      <stop offset='100%' stop-color='%230a1628'/>
+    </radialGradient>
+    <filter id='glow' x='-20%' y='-20%' width='140%' height='140%'>
+      <feGaussianBlur stdDeviation='1.2' result='blur'/>
+      <feMerge><feMergeNode in='blur'/><feMergeNode in='SourceGraphic'/></feMerge>
+    </filter>
+  </defs>
+  <circle cx='28' cy='28' r='28' fill='url(%23bg)'/>
+  <circle cx='28' cy='28' r='26.5' fill='none' stroke='%2338bdf8' stroke-width='0.6' opacity='0.35'/>
+  <polyline points='7,28 13,28 16,17 19.5,39 23,21 26.5,35 30,19 33.5,37 37,24 40,32 43,28 49,28'
+    fill='none' stroke='%2338bdf8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'
+    filter='url(%23glow)' opacity='0.95'/>
+  <circle cx='43' cy='28' r='3' fill='%2338bdf8' filter='url(%23glow)' opacity='0.9'/>
+  <circle cx='43' cy='28' r='5' fill='%2338bdf8' opacity='0.15'/>
+</svg>"""
+
+    import base64 as _b64
+    sage_b64 = _b64.b64encode(sage_svg_raw.encode()).decode()
+    sage_data_uri = f"data:image/svg+xml;base64,{sage_b64}"
+
+    # Suggestions as JS array
+    suggestions_js = '["What\'s the strongest signal today?","Which markets are bearish?","Explain the top BUY signal","Any high-confidence SELL signals?"]'
+
+    # ── Render Sage floating widget in right-aligned column ───────────────────
+    import streamlit.components.v1 as _comp
+    _, _sage_col = st.columns([3, 1])
+    with _sage_col:
+        _comp.html(f"""<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-/* Hide the default Streamlit padding around our chat section */
-section[data-testid="stVerticalBlock"] > div:has(> div[data-chat-panel]) {
-    position: fixed !important;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    z-index: 9999;
-    width: 380px;
-    max-height: 600px;
-}
+  * {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
+  body {{ background:transparent; overflow:visible; height:80px; position:relative; }}
+
+  /* ── Avatar button ── */
+  #sage-btn {{
+    position:absolute; bottom:0.5rem; right:0;
+    width:56px; height:56px;
+    border-radius:50%;
+    cursor:pointer;
+    border:none; background:none; padding:0;
+    box-shadow:0 4px 24px rgba(56,189,248,0.35), 0 2px 8px rgba(0,0,0,0.5);
+    transition:transform 0.2s ease, box-shadow 0.2s ease;
+    z-index:10001;
+  }}
+  #sage-btn:hover {{
+    transform:scale(1.08) translateY(-2px);
+    box-shadow:0 6px 32px rgba(56,189,248,0.55), 0 2px 12px rgba(0,0,0,0.6);
+  }}
+  #sage-btn img {{ width:56px; height:56px; border-radius:50%; display:block; }}
+
+  /* Pulse ring animation */
+  #sage-btn::after {{
+    content:'';
+    position:absolute; inset:-4px;
+    border-radius:50%;
+    border:2px solid rgba(56,189,248,0.4);
+    animation:pulse 2.4s ease-out infinite;
+  }}
+  @keyframes pulse {{
+    0%   {{ opacity:0.8; transform:scale(1); }}
+    70%  {{ opacity:0;   transform:scale(1.35); }}
+    100% {{ opacity:0;   transform:scale(1.35); }}
+  }}
+
+  /* ── Chat panel ── */
+  #sage-panel {{
+    position:absolute; bottom:4.5rem; right:0;
+    width:360px;
+    max-height:520px;
+    background:#0d1117;
+    border:1px solid #1e3a5f;
+    border-radius:20px;
+    display:flex; flex-direction:column;
+    box-shadow:0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(56,189,248,0.1);
+    z-index:10000;
+    transition:opacity 0.25s ease, transform 0.25s ease;
+    overflow:hidden;
+  }}
+  #sage-panel.hidden {{
+    opacity:0; transform:translateY(12px) scale(0.97);
+    pointer-events:none;
+  }}
+
+  /* Header */
+  .sage-header {{
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.8rem 1rem;
+    background:linear-gradient(135deg,#0f2744 0%,#0a1628 100%);
+    border-bottom:1px solid #1e3a5f;
+    flex-shrink:0;
+  }}
+  .sage-header img {{ width:32px; height:32px; border-radius:50%; }}
+  .sage-name {{ font-size:0.9rem; font-weight:600; color:#f1f5f9; }}
+  .sage-sub  {{ font-size:0.68rem; color:#38bdf8; margin-top:0.05rem; }}
+  .sage-close {{
+    margin-left:auto; background:none; border:none;
+    color:#475569; font-size:1.1rem; cursor:pointer;
+    padding:0.2rem 0.4rem; border-radius:6px;
+    transition:color 0.15s;
+  }}
+  .sage-close:hover {{ color:#f1f5f9; }}
+
+  /* Messages */
+  #sage-msgs {{
+    flex:1; overflow-y:auto; padding:0.75rem;
+    display:flex; flex-direction:column; gap:0.5rem;
+    scroll-behavior:smooth;
+  }}
+  #sage-msgs::-webkit-scrollbar {{ width:4px; }}
+  #sage-msgs::-webkit-scrollbar-track {{ background:transparent; }}
+  #sage-msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f; border-radius:2px; }}
+
+  .msg {{ font-size:0.8rem; line-height:1.45; max-width:88%; word-break:break-word; }}
+  .msg.user {{
+    align-self:flex-end;
+    background:#1e3a5f; color:#f1f5f9;
+    padding:0.4rem 0.75rem;
+    border-radius:14px 14px 2px 14px;
+  }}
+  .msg.bot {{
+    align-self:flex-start;
+    background:#111827; color:#cbd5e1;
+    padding:0.5rem 0.75rem;
+    border-radius:2px 14px 14px 14px;
+    border:1px solid #1e293b;
+  }}
+
+  /* Typing indicator */
+  .typing {{ display:flex; gap:4px; padding:0.5rem 0.75rem; align-self:flex-start; }}
+  .typing span {{
+    width:6px; height:6px; background:#38bdf8; border-radius:50%;
+    animation:bounce 1.2s infinite;
+  }}
+  .typing span:nth-child(2) {{ animation-delay:0.2s; }}
+  .typing span:nth-child(3) {{ animation-delay:0.4s; }}
+  @keyframes bounce {{
+    0%,60%,100% {{ transform:translateY(0); }}
+    30%          {{ transform:translateY(-6px); }}
+  }}
+
+  /* Suggestions */
+  #sage-suggestions {{
+    padding:0.5rem 0.75rem 0;
+    display:flex; flex-wrap:wrap; gap:0.35rem;
+    flex-shrink:0;
+  }}
+  .chip {{
+    background:#0f2744; color:#38bdf8;
+    border:1px solid #1e3a5f; border-radius:20px;
+    font-size:0.7rem; padding:0.25rem 0.6rem;
+    cursor:pointer; transition:all 0.15s;
+    white-space:nowrap;
+  }}
+  .chip:hover {{ background:#1e3a5f; color:#7dd3fc; border-color:#38bdf8; }}
+
+  /* Input row */
+  .sage-input-row {{
+    display:flex; gap:0.4rem;
+    padding:0.6rem 0.75rem 0.75rem;
+    border-top:1px solid #1e293b;
+    flex-shrink:0;
+  }}
+  #sage-input {{
+    flex:1; background:#111827; border:1px solid #1e3a5f;
+    border-radius:10px; color:#f1f5f9; font-size:0.8rem;
+    padding:0.45rem 0.7rem; outline:none;
+    transition:border-color 0.15s;
+  }}
+  #sage-input:focus {{ border-color:#38bdf8; }}
+  #sage-input::placeholder {{ color:#334155; }}
+  #sage-send {{
+    background:#1e3a5f; border:none; border-radius:10px;
+    color:#38bdf8; font-size:1rem; padding:0 0.8rem;
+    cursor:pointer; transition:all 0.15s; flex-shrink:0;
+  }}
+  #sage-send:hover {{ background:#38bdf8; color:#0a1628; }}
+
+  @media (max-width:480px) {{
+    #sage-panel {{ width:calc(100vw - 2rem); right:1rem; }}
+  }}
 </style>
-    """, unsafe_allow_html=True)
+</head>
+<body>
 
-    # Since true fixed positioning isn't reliable in Streamlit's DOM,
-    # we use a right-aligned column that stays at page bottom as the closest
-    # reliable approximation, combined with a compact collapsible design.
-    # The toggle + panel live in a thin right column.
-    _, chat_col = st.columns([1, 1])
+<!-- Avatar toggle button -->
+<button id="sage-btn" title="Ask Sage" aria-label="Open Sage assistant">
+  <img src="{sage_data_uri}" alt="Sage"/>
+</button>
 
-    with chat_col:
-        # Toggle button with chat bubble icon
-        toggle_icon = "✕" if st.session_state.chat_open else "💬"
-        toggle_tip  = "Close assistant" if st.session_state.chat_open else "Ask Sentiment Signal"
-        if st.button(f"{toggle_icon} {toggle_tip}",
-                     key="chat_float_toggle",
-                     type="primary" if not st.session_state.chat_open else "secondary",
-                     use_container_width=True):
-            st.session_state.chat_open = not st.session_state.chat_open
-            st.rerun()
-
-        if st.session_state.chat_open:
-            st.markdown("""
-<div style="background:#0d1117;border:1px solid #1e3a5f;border-radius:16px;
-            padding:1rem;margin-top:0.5rem;">
-  <div style="font-size:0.95rem;font-weight:600;color:#60a5fa;margin-bottom:0.75rem">
-    🤖 Sentiment Signal Assistant
+<!-- Chat panel -->
+<div id="sage-panel" class="hidden">
+  <div class="sage-header">
+    <img src="{sage_data_uri}" alt="Sage"/>
+    <div>
+      <div class="sage-name">Sage</div>
+      <div class="sage-sub">Sentiment Signal Assistant</div>
+    </div>
+    <button class="sage-close" id="sage-close" aria-label="Close">✕</button>
   </div>
-            """, unsafe_allow_html=True)
 
-            # Chat history
-            for msg in st.session_state.chat_msgs[-10:]:
-                role    = msg["role"]
-                content = msg["content"]
-                if role == "user":
-                    st.markdown(
-                        f"<div style='text-align:right;margin:0.3rem 0'>"
-                        f"<span style='background:#1e3a5f;color:#f1f5f9;"
-                        f"padding:0.35rem 0.7rem;border-radius:12px 12px 0 12px;"
-                        f"font-size:0.8rem;display:inline-block;max-width:90%'>{content}</span></div>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        f"<div style='background:#111827;border:1px solid #1e293b;"
-                        f"border-radius:12px;padding:0.5rem 0.7rem;margin:0.3rem 0;"
-                        f"font-size:0.8rem;color:#cbd5e1'>{content}</div>",
-                        unsafe_allow_html=True,
-                    )
+  <div id="sage-msgs">
+    <div class="msg bot">
+      Hi! I'm <strong>Sage</strong> 👋 Ask me about any stock signal, market sentiment, or type a ticker like <em>NVDA</em> or <em>ASML</em> for a quick spotlight.
+    </div>
+    {history_html}
+  </div>
 
-            # Open analysis buttons for any spotted tickers
-            if st.session_state.chat_tickers:
-                for full_t, (mkt, exch, display_t, company) in st.session_state.chat_tickers.items():
-                    if st.button(f"📊 Open {display_t} analysis →",
-                                 key=f"chat_open_{full_t}",
-                                 use_container_width=True, type="primary"):
-                        load_top_signals.clear()
-                        add_ticker_tab(full_t, display_t, company, mkt, exch)
+  <div id="sage-suggestions"></div>
 
-            st.markdown("</div>", unsafe_allow_html=True)
+  <div class="sage-input-row">
+    <input id="sage-input" type="text" placeholder="Ask about a stock or market…" autocomplete="off"/>
+    <button id="sage-send" aria-label="Send">↑</button>
+  </div>
+</div>
 
-            # Input
-            inp_c, btn_c = st.columns([4, 1])
-            with inp_c:
-                user_input = st.text_input(
-                    "msg", label_visibility="collapsed",
-                    placeholder="Ask about a stock or market…",
-                    key="chat_input_field",
-                    value=st.session_state.chat_input,
-                )
-            with btn_c:
-                send = st.button("→", key="chat_send_btn",
-                                 use_container_width=True, type="primary")
-            if send and user_input.strip():
-                _handle_send(user_input)
-                st.rerun()
+<script>
+const panel   = document.getElementById('sage-panel');
+const btn     = document.getElementById('sage-btn');
+const closeB  = document.getElementById('sage-close');
+const input   = document.getElementById('sage-input');
+const sendBtn = document.getElementById('sage-send');
+const msgs    = document.getElementById('sage-msgs');
+const sugBox  = document.getElementById('sage-suggestions');
 
-            # Suggestion chips — below input, compact
-            st.caption("Quick questions:")
-            s_cols = st.columns(2)
-            suggestions = [
-                ("💪 Strongest signal", "What's the strongest signal today?"),
-                ("🐻 Bearish markets",  "Which markets are bearish right now?"),
-                ("📈 Top BUY",          "Explain the top BUY signal"),
-                ("📉 SELL signals",     "Any high-confidence SELL signals?"),
-            ]
-            for i, (label, full_q) in enumerate(suggestions):
-                with s_cols[i % 2]:
-                    if st.button(label, key=f"chip_{i}",
-                                 use_container_width=True, type="secondary"):
-                        _handle_send(full_q)
-                        st.rerun()
+let isOpen = false;
 
-            # Clear
-            if st.session_state.chat_msgs:
-                if st.button("🗑 Clear", key="chat_clear_btn", type="secondary"):
-                    st.session_state.chat_msgs   = []
-                    st.session_state.chat_tickers = {}
-                    st.rerun()
+function togglePanel() {{
+  isOpen = !isOpen;
+  panel.classList.toggle('hidden', !isOpen);
+  // Resize the iframe to give the panel room to render
+  if (isOpen) {{
+    document.body.style.height = '620px';
+    window.frameElement && (window.frameElement.style.height = '620px');
+    scrollToBottom();
+    input.focus();
+    if (msgs.children.length === 1) buildSuggestions();
+  }} else {{
+    document.body.style.height = '80px';
+    window.frameElement && (window.frameElement.style.height = '80px');
+  }}
+}}
 
+btn.addEventListener('click', togglePanel);
+closeB.addEventListener('click', togglePanel);
 
+// Build suggestion chips
+const suggestions = {suggestions_js};
+function buildSuggestions() {{
+  sugBox.innerHTML = '';
+  suggestions.forEach(s => {{
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.textContent = s;
+    chip.addEventListener('click', () => sendMessage(s));
+    sugBox.appendChild(chip);
+  }});
+}}
+buildSuggestions();
 
+function scrollToBottom() {{
+  msgs.scrollTop = msgs.scrollHeight;
+}}
+
+function addMsg(text, role) {{
+  const div = document.createElement('div');
+  div.className = `msg ${{role}}`;
+  div.innerHTML = text;
+  msgs.appendChild(div);
+  scrollToBottom();
+}}
+
+function showTyping() {{
+  const t = document.createElement('div');
+  t.className = 'typing'; t.id = 'sage-typing';
+  t.innerHTML = '<span></span><span></span><span></span>';
+  msgs.appendChild(t);
+  scrollToBottom();
+  return t;
+}}
+
+function sendMessage(text) {{
+  if (!text.trim()) return;
+  addMsg(text, 'user');
+  input.value = '';
+  sugBox.innerHTML = ''; // hide chips after first use
+
+  const typing = showTyping();
+
+  // Send to parent Streamlit via postMessage + URL param
+  window.parent.postMessage({{sage_msg: text}}, '*');
+
+  // Navigate parent to trigger rerun with message
+  setTimeout(() => {{
+    typing.remove();
+    // Use URL param as the reliable Streamlit bridge
+    const url = new URL(window.parent.location.href);
+    url.searchParams.set('sage_msg', encodeURIComponent(text));
+    window.parent.location.href = url.toString();
+  }}, 300);
+}}
+
+sendBtn.addEventListener('click', () => sendMessage(input.value));
+input.addEventListener('keydown', e => {{
+  if (e.key === 'Enter') sendMessage(input.value);
+}});
+
+scrollToBottom();
+</script>
+</body>
+        </html>""", height=80, scrolling=False)
 
 
 
