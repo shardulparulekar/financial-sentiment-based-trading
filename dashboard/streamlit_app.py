@@ -985,58 +985,20 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
         _sage_hist += f"<div class=\'smsg sbot\'>{_c}</div>"
 
 
-# ── Sage: CSS to position the components.html iframe ─────────────────────────
+# ── Sage: self-positioning iframe widget ──────────────────────────────────────
 import streamlit.components.v1 as _comp_sage
 
-# Anchor the iframe fixed at right-centre. JS only changes w/h/top — CSS locks it to right edge.
-st.markdown("""
-<style>
-/* ── Sage iframe: always fixed to the RIGHT edge, vertically centred when closed ── */
-[data-testid="stCustomComponentV1"] iframe {
-    position: fixed !important;
-    right: 0 !important;
-    top: 50vh !important;
-    transform: translateY(-50%) !important;
-    width: 80px !important;
-    height: 80px !important;
-    z-index: 99999 !important;
-    border: none !important;
-    background: transparent !important;
-    overflow: hidden !important;
-    transition: width  0.28s cubic-bezier(.4,0,.2,1),
-                height 0.28s cubic-bezier(.4,0,.2,1),
-                top    0.28s cubic-bezier(.4,0,.2,1),
-                transform 0.28s cubic-bezier(.4,0,.2,1) !important;
-}
-/* Push main content right padding so it doesn't hide under the panel */
-body.sage-open .block-container {
-    padding-right: 26vw !important;
-    transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
-}
-/* Ensure the page itself can scroll independently */
-html, body {
-    overflow-y: auto !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Build Sage widget HTML — FAB uses a pure inline SVG ECG animation + SAGE label
+# No external CSS needed — the iframe positions itself via JS on window.frameElement
+# exactly like Streamlit's own "Manage app" toolbar button does.
 
 _sage_hist_html = ""
 for _shm in st.session_state.sage_msgs[-16:]:
-    _shc = _shm["content"].replace('"', '&quot;')
+    _shc = _shm["content"].replace('"', '&quot;').replace("'", "&#39;")
     if _shm["role"] == "user":
         _sage_hist_html += f'<div class="msg mu">{_shc}</div>'
     else:
         _sage_hist_html += f'<div class="msg mb">{_shc}</div>'
 
-# ── Sage widget ────────────────────────────────────────────────────────────────
-# The iframe is anchored fixed centre-right via external CSS (top:50vh, margin-top:-40px).
-# setSize() only changes width/height — zero transform conflicts.
-# When open: iframe grows to 376×640, FAB hides, panel shows flush right edge.
-# When closed: iframe shrinks to 80×80, FAB shows, panel hides.
-# body.sage-open is toggled on window.parent.document.body so the Streamlit
-# block-container gets padding-right to avoid content being hidden under the panel.
 _sage_widget = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1045,10 +1007,9 @@ _sage_widget = f"""<!DOCTYPE html>
 * {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
 html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }}
 
-/* ── FAB button ── */
+/* ── FAB ── */
 #fab {{
-    position:absolute;
-    top:50%; left:50%; transform:translate(-50%,-50%);
+    position:fixed; bottom:3rem; right:1rem;
     width:72px; height:72px; border-radius:18px; cursor:pointer;
     border:1.5px solid rgba(56,189,248,0.55);
     background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
@@ -1056,10 +1017,10 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     box-shadow:0 4px 24px rgba(56,189,248,0.35), 0 8px 32px rgba(0,0,0,0.8);
     transition:transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    z-index:10;
 }}
-#fab:hover {{ transform:translate(-50%,-50%) scale(1.08); box-shadow:0 6px 32px rgba(56,189,248,0.6); }}
+#fab:hover {{ transform:scale(1.08); box-shadow:0 6px 32px rgba(56,189,248,0.6); }}
 
-/* Animated ECG line inside FAB */
 #fab svg.ecg {{ width:52px; height:28px; overflow:visible; }}
 #fab svg.ecg polyline {{
     fill:none; stroke:#38bdf8; stroke-width:2;
@@ -1074,41 +1035,39 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     70%  {{ stroke-dashoffset:0;   opacity:1; }}
     100% {{ stroke-dashoffset:-120; opacity:0.3; }}
 }}
-/* SAGE label */
 #fab .flabel {{
     font-family:monospace; font-size:9px; font-weight:700;
     letter-spacing:3px; color:#38bdf8; opacity:0.9;
     text-shadow:0 0 8px rgba(56,189,248,0.7);
 }}
-
-/* Outer pulse ring */
 #ring {{
-    position:absolute; top:50%; left:50%;
-    width:80px; height:80px; border-radius:20px;
+    position:fixed; bottom:3rem; right:1rem;
+    width:72px; height:72px; border-radius:20px;
     border:2px solid rgba(56,189,248,0.4);
-    transform:translate(-50%,-50%);
     animation:pulse 3s ease-out infinite; pointer-events:none;
+    z-index:9;
 }}
 @keyframes pulse {{
-    0%   {{ opacity:0.7; transform:translate(-50%,-50%) scale(1);   }}
-    70%  {{ opacity:0;   transform:translate(-50%,-50%) scale(1.28); }}
-    100% {{ opacity:0;   transform:translate(-50%,-50%) scale(1.28); }}
+    0%   {{ opacity:0.7; transform:scale(1);   }}
+    70%  {{ opacity:0;   transform:scale(1.28); }}
+    100% {{ opacity:0;   transform:scale(1.28); }}
 }}
 
-/* ── Panel ── (anchored top-right inside the iframe, full viewport height) */
+/* ── Panel: fixed right, full height, own scroll ── */
 #panel {{
-    display:none; position:absolute; top:0; right:0;
-    width:25vw; min-width:300px; height:100vh;
-    background:#080f1e; border-left:1px solid rgba(56,189,248,0.22);
-    border-radius:0;
+    display:none;
+    position:fixed; top:0; right:0; bottom:0;
+    width:320px;
+    background:#080f1e;
+    border-left:1px solid rgba(56,189,248,0.22);
     flex-direction:column;
     box-shadow:-8px 0 48px rgba(0,0,0,0.85);
     overflow:hidden;
+    z-index:10;
 }}
 @keyframes slideIn {{ from{{opacity:0;transform:translateX(20px);}} to{{opacity:1;transform:translateX(0);}} }}
 #panel.open {{ display:flex; animation:slideIn 0.25s cubic-bezier(.4,0,.2,1); }}
 
-/* Panel header */
 .hdr {{
     display:flex; align-items:center; gap:0.6rem;
     padding:0.8rem 1rem;
@@ -1136,7 +1095,6 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 }}
 #cls:hover {{ color:#94a3b8; background:rgba(255,255,255,0.06); }}
 
-/* Messages */
 #msgs {{
     flex:1; overflow-y:auto; padding:0.75rem;
     display:flex; flex-direction:column; gap:0.45rem; scroll-behavior:smooth;
@@ -1144,18 +1102,18 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 #msgs::-webkit-scrollbar {{ width:3px; }}
 #msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f; border-radius:2px; }}
 .msg {{ font-size:0.79rem; line-height:1.5; max-width:92%; word-break:break-word; }}
-.mu  {{
+.mu {{
     align-self:flex-end;
     background:linear-gradient(135deg,#1e3a5f,#152d4a);
     color:#e2e8f0; padding:0.4rem 0.75rem;
     border-radius:14px 14px 2px 14px;
 }}
-.mb  {{
+.mb {{
     align-self:flex-start; background:#0f1c2e; color:#cbd5e1;
     padding:0.5rem 0.7rem; border-radius:2px 14px 14px 14px;
     border:1px solid rgba(56,189,248,0.1);
 }}
-.mg  {{
+.mg {{
     align-self:center; text-align:center;
     background:linear-gradient(135deg,#0c1f3d,#080f1e);
     border:1px solid rgba(56,189,248,0.12); border-radius:12px;
@@ -1170,7 +1128,6 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 .typing span:nth-child(3) {{ animation-delay:0.36s; }}
 @keyframes bounce {{ 0%,60%,100%{{transform:translateY(0);}} 30%{{transform:translateY(-6px);}} }}
 
-/* Chips */
 #chips {{ padding:0.45rem 0.75rem 0.2rem; display:flex; flex-wrap:wrap; gap:0.28rem; flex-shrink:0; }}
 .chip {{
     background:#0c1f3d; color:#38bdf8;
@@ -1180,7 +1137,6 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 }}
 .chip:hover {{ background:#1e3a5f; border-color:#38bdf8; color:#7dd3fc; }}
 
-/* Input row */
 .irow {{
     display:flex; gap:0.4rem; padding:0.55rem 0.75rem 0.65rem;
     border-top:1px solid rgba(56,189,248,0.09); flex-shrink:0;
@@ -1201,19 +1157,13 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 </style>
 </head>
 <body>
-
-<!-- Pulse ring (only visible when FAB is shown) -->
 <div id="ring"></div>
-
-<!-- FAB — inline SVG ECG + SAGE label -->
 <button id="fab" title="Ask Sage">
   <svg class="ecg" viewBox="0 0 52 28">
     <polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/>
   </svg>
   <span class="flabel">SAGE</span>
 </button>
-
-<!-- Chat panel — slides in from the right -->
 <div id="panel">
   <div class="hdr">
     <div class="hdr-icon">
@@ -1242,6 +1192,26 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 
 <script>
 (function() {{
+  // ── Self-position the iframe fixed to bottom-right, like "Manage app" ──
+  // This runs immediately so there is no flash of wrong position.
+  (function fixIframe() {{
+    var fe = window.frameElement;
+    if (!fe) return;
+    // Remove from normal flow entirely
+    fe.style.cssText = [
+      'position:fixed',
+      'bottom:2.5rem',
+      'right:1rem',
+      'width:80px',
+      'height:80px',
+      'border:none',
+      'background:transparent',
+      'z-index:99999',
+      'overflow:visible',
+      'transition:width 0.28s cubic-bezier(.4,0,.2,1),height 0.28s cubic-bezier(.4,0,.2,1)',
+    ].join('!important;') + '!important';
+  }})();
+
   var fab   = document.getElementById('fab'),
       ring  = document.getElementById('ring'),
       panel = document.getElementById('panel'),
@@ -1259,29 +1229,22 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     "Any high-confidence SELL signals?"
   ];
 
-  // Resize the iframe and toggle FAB/panel visibility.
-  // CSS anchors to right:0 always. We only adjust top/transform/size here.
   function setSize(o) {{
     var fe = window.frameElement;
     if (!fe) return;
     if (o) {{
-      // Open: full-height sidebar flush to the right edge
-      fe.style.width     = '25vw';
-      fe.style.minWidth  = '300px';
-      fe.style.height    = '100vh';
-      fe.style.top       = '0';
-      fe.style.transform = 'none';
+      fe.style.width  = '320px';
+      fe.style.height = '100vh';
+      fe.style.bottom = '0';
+      fe.style.right  = '0';
     }} else {{
-      // Closed: 80x80 FAB, vertically centred on right edge
-      fe.style.width     = '80px';
-      fe.style.minWidth  = '';
-      fe.style.height    = '80px';
-      fe.style.top       = '50vh';
-      fe.style.transform = 'translateY(-50%)';
+      fe.style.width  = '80px';
+      fe.style.height = '80px';
+      fe.style.bottom = '2.5rem';
+      fe.style.right  = '1rem';
     }}
   }}
 
-  // Add/remove sage-open class on the parent body to push Streamlit content left
   function setBodyClass(o) {{
     try {{
       if (o) window.parent.document.body.classList.add('sage-open');
@@ -1292,9 +1255,9 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
   function toggle() {{
     open = !open;
     panel.classList.toggle('open', open);
-    fab.style.opacity   = open ? '0' : '1';
+    fab.style.opacity      = open ? '0' : '1';
     fab.style.pointerEvents = open ? 'none' : 'auto';
-    ring.style.display  = open ? 'none' : 'block';
+    ring.style.display     = open ? 'none' : 'block';
     setSize(open);
     setBodyClass(open);
     if (open) {{ scroll2b(); inp.focus(); if (!built) {{ buildChips(); built = true; }} }}
@@ -1339,7 +1302,17 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 </body>
 </html>"""
 
-_comp_sage.html(_sage_widget, height=80, scrolling=True)
+# Nudge main content left when panel is open so nothing is hidden under it
+st.markdown("""
+<style>
+body.sage-open .block-container {
+    padding-right: 330px !important;
+    transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+_comp_sage.html(_sage_widget, height=80, scrolling=False)
 
 
 
