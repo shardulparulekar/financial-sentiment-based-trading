@@ -985,164 +985,204 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
         _sage_hist += f"<div class=\'smsg sbot\'>{_c}</div>"
 
 
-_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdzYmcnIGN4PSc1MCUnIGN5PSc1MCUnIHI9JzUwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nJTIzMDgyMDQwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPSclMjMwNTBmMWYnLz48L3JhZGlhbEdyYWRpZW50PjxmaWx0ZXIgaWQ9J3NnbG93JyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYmx1cicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzEnIG9wYWNpdHk9JzAuMycvPjxwb2x5bGluZSBwb2ludHM9JzYsMzggMTIsMzggMTUsMjYgMTguNSw1MCAyMiwyOCAyNS41LDQ0IDI5LDIzIDMyLjUsNDcgMzYsMzAgMzksNDIgNDIsMzggNDgsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzc2dsb3cpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nMycgZmlsbD0nJTIzMzhiZGY4JyBmaWx0ZXI9J3VybCglMjNzZ2xvdyknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSc2JyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuMTInLz48dGV4dCB4PSczNicgeT0nNjInIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOScgZm9udC13ZWlnaHQ9JzcwMCcgbGV0dGVyLXNwYWNpbmc9JzMnIGZpbGw9JyUyMzM4YmRmOCcgb3BhY2l0eT0nMC45Jz5TQUdFPC90ZXh0Pjwvc3ZnPg=="
+# ── Sage: CSS to position the components.html iframe ─────────────────────────
+import streamlit.components.v1 as _comp_sage
 
-# Build Sage widget HTML — CSS uses {{}} escaping, JS uses string concatenation
-_sage_css = f"""<style>
-#sage-fab{{position:fixed;top:1rem;right:1rem;width:72px;height:72px;border-radius:18px;
-    cursor:pointer;border:1.5px solid rgba(56,189,248,0.45);
-    background:linear-gradient(135deg,#082040 0%,#050f1f 100%);padding:0;z-index:99999;
-    box-shadow:0 4px 20px rgba(56,189,248,0.3),0 8px 32px rgba(0,0,0,0.6);
-    transition:transform 0.2s ease,box-shadow 0.2s ease;}}
-#sage-fab:hover{{transform:scale(1.06) translateY(1px);
-    box-shadow:0 6px 28px rgba(56,189,248,0.5),0 8px 32px rgba(0,0,0,0.7);}}
-#sage-fab img{{width:72px;height:72px;border-radius:18px;display:block;}}
-#sage-fab::after{{content:'';position:absolute;inset:-3px;border-radius:20px;
-    border:1.5px solid rgba(56,189,248,0.35);
-    animation:sagepulse 2.8s ease-out infinite;pointer-events:none;}}
-@keyframes sagepulse{{0%{{opacity:0.7;transform:scale(1);}}70%{{opacity:0;transform:scale(1.2);}}100%{{opacity:0;transform:scale(1.2);}}}}
-#sage-panel{{position:fixed;top:5.5rem;right:1rem;width:360px;
-    max-height:calc(100vh - 7rem);background:#080f1e;
-    border:1px solid rgba(56,189,248,0.22);border-radius:20px;
-    display:none;flex-direction:column;
-    box-shadow:0 24px 64px rgba(0,0,0,0.8),0 0 0 1px rgba(56,189,248,0.07);
-    z-index:99998;overflow:hidden;animation:sageslide 0.22s ease;}}
-@keyframes sageslide{{from{{opacity:0;transform:translateY(-10px) scale(0.97);}}to{{opacity:1;transform:translateY(0) scale(1);}}}}
-#sage-panel.sopen{{display:flex;}}
-.sage-hdr{{display:flex;align-items:center;gap:0.6rem;padding:0.75rem 1rem;
-    background:linear-gradient(135deg,#0c1f3d 0%,#080f1e 100%);
-    border-bottom:1px solid rgba(56,189,248,0.13);flex-shrink:0;}}
-.sage-hdr img{{width:34px;height:34px;border-radius:10px;}}
-.sage-hname{{font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:1px;}}
-.sage-hsub{{font-size:0.67rem;color:#38bdf8;margin-top:0.05rem;}}
-.sage-hclose{{margin-left:auto;background:none;border:none;color:#334155;
-    font-size:1rem;cursor:pointer;padding:0.2rem 0.4rem;
-    border-radius:6px;transition:color 0.15s;}}
-.sage-hclose:hover{{color:#94a3b8;}}
-#sage-msgs{{flex:1;overflow-y:auto;padding:0.75rem;
-    display:flex;flex-direction:column;gap:0.45rem;scroll-behavior:smooth;}}
-#sage-msgs::-webkit-scrollbar{{width:3px;}}
-#sage-msgs::-webkit-scrollbar-thumb{{background:#1e3a5f;border-radius:2px;}}
-.smsg{{font-size:0.79rem;line-height:1.5;max-width:90%;word-break:break-word;}}
-.suser{{align-self:flex-end;background:linear-gradient(135deg,#1e3a5f,#152d4a);
-    color:#e2e8f0;padding:0.4rem 0.75rem;border-radius:14px 14px 2px 14px;}}
-.sbot{{align-self:flex-start;background:#0f1c2e;color:#cbd5e1;
-    padding:0.5rem 0.7rem;border-radius:2px 14px 14px 14px;
-    border:1px solid rgba(56,189,248,0.1);}}
-.sgreet{{align-self:center;text-align:center;
-    background:linear-gradient(135deg,#0c1f3d,#080f1e);
-    border:1px solid rgba(56,189,248,0.13);border-radius:12px;
-    padding:0.6rem 0.8rem;color:#94a3b8;font-size:0.76rem;max-width:100%;}}
-.styping{{display:flex;gap:4px;padding:0.4rem 0.7rem;align-self:flex-start;}}
-.styping span{{width:5px;height:5px;background:#38bdf8;border-radius:50%;animation:sbounce 1.2s infinite;}}
-.styping span:nth-child(2){{animation-delay:0.18s;}}
-.styping span:nth-child(3){{animation-delay:0.36s;}}
-@keyframes sbounce{{0%,60%,100%{{transform:translateY(0);}}30%{{transform:translateY(-6px);}}}}
-#sage-chips{{padding:0.45rem 0.75rem 0.2rem;display:flex;flex-wrap:wrap;gap:0.28rem;flex-shrink:0;}}
-.schip{{background:#0c1f3d;color:#38bdf8;border:1px solid rgba(56,189,248,0.22);
-    border-radius:20px;font-size:0.69rem;padding:0.2rem 0.52rem;
-    cursor:pointer;transition:all 0.15s;white-space:nowrap;}}
-.schip:hover{{background:#1e3a5f;border-color:#38bdf8;color:#7dd3fc;}}
-.sage-irow{{display:flex;gap:0.4rem;padding:0.55rem 0.75rem 0.65rem;
-    border-top:1px solid rgba(56,189,248,0.09);flex-shrink:0;}}
-#sage-inp{{flex:1;background:#0c1824;border:1px solid rgba(56,189,248,0.22);
-    border-radius:10px;color:#f1f5f9;font-size:0.79rem;
-    padding:0.4rem 0.7rem;outline:none;transition:border-color 0.15s;}}
-#sage-inp:focus{{border-color:#38bdf8;}}
-#sage-inp::placeholder{{color:#1e3a5f;}}
-#sage-send{{background:#0c1f3d;border:1px solid rgba(56,189,248,0.28);
-    border-radius:10px;color:#38bdf8;font-size:1.1rem;
-    padding:0 0.8rem;cursor:pointer;transition:all 0.15s;flex-shrink:0;}}
-#sage-send:hover{{background:#38bdf8;color:#050f1f;border-color:#38bdf8;}}
-@media(max-width:480px){{
-    #sage-panel{{width:calc(100vw - 1.5rem);right:0.75rem;}}
-    #sage-fab{{width:60px;height:60px;border-radius:14px;}}
-    #sage-fab img{{width:60px;height:60px;border-radius:14px;}}
+# Inject CSS that targets Streamlit's iframe wrapper for our Sage widget.
+# We use a unique key on the column container to target it specifically.
+st.markdown("""
+<style>
+/* Position Sage iframe fixed at vertical centre, right edge */
+[data-testid="stVerticalBlock"] iframe[height="80"] {
+    position: fixed !important;
+    right: 1rem !important;
+    top: 50vh !important;
+    transform: translateY(-50%) !important;
+    z-index: 99999 !important;
+    border: none !important;
+    overflow: visible !important;
+    transition: width 0.25s ease, height 0.25s ease !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Build Sage widget HTML
+_SAGE_URI_WIDGET = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdzYmcnIGN4PSc1MCUnIGN5PSc1MCUnIHI9JzUwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nJTIzMDgyMDQwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPSclMjMwNTBmMWYnLz48L3JhZGlhbEdyYWRpZW50PjxmaWx0ZXIgaWQ9J3NnbG93JyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYmx1cicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzEnIG9wYWNpdHk9JzAuMycvPjxwb2x5bGluZSBwb2ludHM9JzYsMzggMTIsMzggMTUsMjYgMTguNSw1MCAyMiwyOCAyNS41LDQ0IDI5LDIzIDMyLjUsNDcgMzYsMzAgMzksNDIgNDIsMzggNDgsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzc2dsb3cpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nMycgZmlsbD0nJTIzMzhiZGY4JyBmaWx0ZXI9J3VybCglMjNzZ2xvdyknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSc2JyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuMTInLz48dGV4dCB4PSczNicgeT0nNjInIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOScgZm9udC13ZWlnaHQ9JzcwMCcgbGV0dGVyLXNwYWNpbmc9JzMnIGZpbGw9JyUyMzM4YmRmOCcgb3BhY2l0eT0nMC45Jz5TQUdFPC90ZXh0Pjwvc3ZnPg=="
+
+_sage_hist_html = ""
+for _shm in st.session_state.sage_msgs[-16:]:
+    _shc = _shm["content"].replace('"', '&quot;')
+    if _shm["role"] == "user":
+        _sage_hist_html += f'<div class="msg mu">{_shc}</div>'
+    else:
+        _sage_hist_html += f'<div class="msg mb">{_shc}</div>'
+
+_sage_widget = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+* {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
+html,body {{ background:transparent; overflow:visible; width:80px; height:80px; }}
+#fab {{
+    position:absolute; bottom:4px; right:4px;
+    width:72px; height:72px; border-radius:18px; cursor:pointer;
+    border:1.5px solid rgba(56,189,248,0.5);
+    background:linear-gradient(135deg,#082040 0%,#050f1f 100%);
+    padding:0;
+    box-shadow:0 4px 20px rgba(56,189,248,0.4),0 8px 32px rgba(0,0,0,0.7);
+    transition:transform 0.2s,box-shadow 0.2s;
 }}
-</style>"""
-
-_sage_html = f"""<button id="sage-fab" aria-label="Open Sage" title="Ask Sage">
-  <img src="{_SAGE_URI}" alt="Sage"/>
-</button>
-<div id="sage-panel" role="dialog" aria-label="Sage assistant">
-  <div class="sage-hdr">
-    <img src="{_SAGE_URI}" alt="Sage"/>
-    <div><div class="sage-hname">SAGE</div><div class="sage-hsub">Sentiment Signal Assistant</div></div>
-    <button class="sage-hclose" id="sage-hclose" aria-label="Close">&#x2715;</button>
+#fab:hover {{ transform:scale(1.07); box-shadow:0 6px 28px rgba(56,189,248,0.6); }}
+#fab img {{ width:72px; height:72px; border-radius:18px; display:block; }}
+#ring {{
+    position:absolute; bottom:0px; right:0px;
+    width:80px; height:80px; border-radius:20px;
+    border:2px solid rgba(56,189,248,0.35);
+    animation:pulse 2.8s ease-out infinite; pointer-events:none;
+}}
+@keyframes pulse {{ 0%{{opacity:0.6;transform:scale(1);}} 70%{{opacity:0;transform:scale(1.2);}} 100%{{opacity:0;transform:scale(1.2);}} }}
+#panel {{
+    display:none; position:absolute; bottom:88px; right:0;
+    width:360px; max-height:520px;
+    background:#080f1e; border:1px solid rgba(56,189,248,0.25);
+    border-radius:20px; flex-direction:column;
+    box-shadow:0 24px 64px rgba(0,0,0,0.9);
+    overflow:hidden;
+}}
+@keyframes slide {{ from{{opacity:0;transform:translateY(8px);}} to{{opacity:1;transform:translateY(0);}} }}
+#panel.open {{ display:flex; animation:slide 0.2s ease; }}
+.hdr {{ display:flex;align-items:center;gap:0.6rem;padding:0.75rem 1rem;
+    background:linear-gradient(135deg,#0c1f3d,#080f1e);
+    border-bottom:1px solid rgba(56,189,248,0.12);flex-shrink:0; }}
+.hdr img {{ width:34px;height:34px;border-radius:10px; }}
+.hname {{ font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:1px; }}
+.hsub  {{ font-size:0.67rem;color:#38bdf8; }}
+#cls {{ margin-left:auto;background:none;border:none;color:#475569;font-size:1rem;
+    cursor:pointer;padding:0.2rem 0.4rem;border-radius:6px;transition:color 0.15s; }}
+#cls:hover {{ color:#94a3b8; }}
+#msgs {{ flex:1;overflow-y:auto;padding:0.75rem;
+    display:flex;flex-direction:column;gap:0.45rem;scroll-behavior:smooth; }}
+#msgs::-webkit-scrollbar {{ width:3px; }}
+#msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f;border-radius:2px; }}
+.msg {{ font-size:0.79rem;line-height:1.5;max-width:90%;word-break:break-word; }}
+.mu  {{ align-self:flex-end;background:linear-gradient(135deg,#1e3a5f,#152d4a);
+    color:#e2e8f0;padding:0.4rem 0.75rem;border-radius:14px 14px 2px 14px; }}
+.mb  {{ align-self:flex-start;background:#0f1c2e;color:#cbd5e1;
+    padding:0.5rem 0.7rem;border-radius:2px 14px 14px 14px;
+    border:1px solid rgba(56,189,248,0.1); }}
+.mg  {{ align-self:center;text-align:center;
+    background:linear-gradient(135deg,#0c1f3d,#080f1e);
+    border:1px solid rgba(56,189,248,0.12);border-radius:12px;
+    padding:0.6rem 0.8rem;color:#94a3b8;font-size:0.76rem;max-width:100%; }}
+.typing {{ display:flex;gap:4px;padding:0.4rem 0.7rem;align-self:flex-start; }}
+.typing span {{ width:5px;height:5px;background:#38bdf8;border-radius:50%;animation:bounce 1.2s infinite; }}
+.typing span:nth-child(2) {{ animation-delay:0.18s; }}
+.typing span:nth-child(3) {{ animation-delay:0.36s; }}
+@keyframes bounce {{ 0%,60%,100%{{transform:translateY(0);}} 30%{{transform:translateY(-6px);}} }}
+#chips {{ padding:0.45rem 0.75rem 0.2rem;display:flex;flex-wrap:wrap;gap:0.28rem;flex-shrink:0; }}
+.chip {{ background:#0c1f3d;color:#38bdf8;border:1px solid rgba(56,189,248,0.22);
+    border-radius:20px;font-size:0.69rem;padding:0.2rem 0.52rem;
+    cursor:pointer;transition:all 0.15s;white-space:nowrap; }}
+.chip:hover {{ background:#1e3a5f;border-color:#38bdf8;color:#7dd3fc; }}
+.irow {{ display:flex;gap:0.4rem;padding:0.55rem 0.75rem 0.65rem;
+    border-top:1px solid rgba(56,189,248,0.09);flex-shrink:0; }}
+#inp {{ flex:1;background:#0c1824;border:1px solid rgba(56,189,248,0.22);
+    border-radius:10px;color:#f1f5f9;font-size:0.79rem;
+    padding:0.4rem 0.7rem;outline:none;transition:border-color 0.15s; }}
+#inp:focus {{ border-color:#38bdf8; }}
+#inp::placeholder {{ color:#1e3a5f; }}
+#snd {{ background:#0c1f3d;border:1px solid rgba(56,189,248,0.28);
+    border-radius:10px;color:#38bdf8;font-size:1.1rem;
+    padding:0 0.8rem;cursor:pointer;transition:all 0.15s;flex-shrink:0; }}
+#snd:hover {{ background:#38bdf8;color:#050f1f; }}
+</style>
+</head>
+<body>
+<div id="ring"></div>
+<button id="fab" title="Ask Sage"><img src="{_SAGE_URI_WIDGET}" alt="Sage"/></button>
+<div id="panel">
+  <div class="hdr">
+    <img src="{_SAGE_URI_WIDGET}" alt="Sage"/>
+    <div><div class="hname">SAGE</div><div class="hsub">Sentiment Signal Assistant</div></div>
+    <button id="cls">&#x2715;</button>
   </div>
-  <div id="sage-msgs">
-    <div class="sgreet">&#x1F44B; Ask me about any stock or market.<br>
-    Type a ticker like <b>NVDA</b> for a quick signal.</div>
-    {_sage_hist}
+  <div id="msgs">
+    <div class="msg mg">&#x1F44B; Ask me about any stock or market.<br>
+      Type a ticker like <b>NVDA</b> for a quick signal.
+    </div>
+    {_sage_hist_html}
   </div>
-  <div id="sage-chips"></div>
-  <div class="sage-irow">
-    <input id="sage-inp" type="text" autocomplete="off" placeholder="Ask about a stock or market&hellip;"/>
-    <button id="sage-send" aria-label="Send">&#x2191;</button>
+  <div id="chips"></div>
+  <div class="irow">
+    <input id="inp" type="text" autocomplete="off" placeholder="Ask about a stock or market&hellip;"/>
+    <button id="snd">&#x2191;</button>
   </div>
-</div>"""
+</div>
+<script>
+(function() {{
+  var fab=document.getElementById('fab'), panel=document.getElementById('panel'),
+      cls=document.getElementById('cls'),  inp=document.getElementById('inp'),
+      snd=document.getElementById('snd'),  msgs=document.getElementById('msgs'),
+      chips=document.getElementById('chips');
+  var open=false, built=false;
+  var suggs=["What's the strongest signal today?","Which markets are bearish?",
+             "Explain the top BUY signal","Any high-confidence SELL signals?"];
 
-# JS as plain string — no f-string so single braces are fine
-_sage_js = """<script>
-(function() {
-  var fab    = document.getElementById('sage-fab'),
-      panel  = document.getElementById('sage-panel'),
-      closeB = document.getElementById('sage-hclose'),
-      inp    = document.getElementById('sage-inp'),
-      sendB  = document.getElementById('sage-send'),
-      msgs   = document.getElementById('sage-msgs'),
-      chips  = document.getElementById('sage-chips');
-  var isOpen = false, chipsShown = false;
-  var suggs  = [
-    "What's the strongest signal today?",
-    "Which markets are bearish?",
-    "Explain the top BUY signal",
-    "Any high-confidence SELL signals?"
-  ];
+  function setSize(o) {{
+    var fe=window.frameElement;
+    if (!fe) return;
+    if (o) {{
+      fe.style.width='380px'; fe.style.height='620px';
+      fe.style.transform='translateY(calc(-50% + 310px))';
+    }} else {{
+      fe.style.width='80px'; fe.style.height='80px';
+      fe.style.transform='translateY(-50%)';
+    }}
+  }}
 
-  function toggle() {
-    isOpen = !isOpen;
-    panel.classList.toggle('sopen', isOpen);
-    if (isOpen) { scroll2b(); inp.focus(); if (!chipsShown) { buildChips(); chipsShown = true; } }
-  }
-  function scroll2b() { msgs.scrollTop = msgs.scrollHeight; }
-
-  function buildChips() {
-    chips.innerHTML = '';
-    suggs.forEach(function(s) {
-      var b = document.createElement('button');
-      b.className = 'schip'; b.textContent = s;
-      b.addEventListener('click', function() { sendMsg(s); });
+  function toggle() {{
+    open=!open; panel.classList.toggle('open',open); setSize(open);
+    if (open) {{ scroll2b(); inp.focus(); if (!built) {{ buildChips(); built=true; }} }}
+  }}
+  function scroll2b() {{ msgs.scrollTop=msgs.scrollHeight; }}
+  function buildChips() {{
+    chips.innerHTML='';
+    suggs.forEach(function(s) {{
+      var b=document.createElement('button');
+      b.className='chip'; b.textContent=s;
+      b.onclick=function(){{ sendMsg(s); }};
       chips.appendChild(b);
-    });
-  }
-
-  function sendMsg(text) {
+    }});
+  }}
+  function sendMsg(text) {{
     if (!text.trim()) return;
-    var ub = document.createElement('div');
-    ub.className = 'smsg suser'; ub.textContent = text;
+    var ub=document.createElement('div');
+    ub.className='msg mu'; ub.textContent=text;
     msgs.appendChild(ub); scroll2b();
-    inp.value = ''; chips.innerHTML = '';
-    var t = document.createElement('div');
-    t.className = 'styping';
-    t.innerHTML = '<span></span><span></span><span></span>';
+    inp.value=''; chips.innerHTML='';
+    var t=document.createElement('div');
+    t.className='typing';
+    t.innerHTML='<span></span><span></span><span></span>';
     msgs.appendChild(t); scroll2b();
-    setTimeout(function() {
-      var url = new URL(window.location.href);
-      url.searchParams.set('sage_msg', encodeURIComponent(text));
-      window.location.href = url.toString();
-    }, 380);
-  }
-
-  fab.addEventListener('click', toggle);
-  closeB.addEventListener('click', toggle);
-  sendB.addEventListener('click', function() { sendMsg(inp.value); });
-  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendMsg(inp.value); });
+    setTimeout(function() {{
+      var url=new URL(window.parent.location.href);
+      url.searchParams.set('sage_msg',encodeURIComponent(text));
+      window.parent.location.href=url.toString();
+    }},380);
+  }}
+  fab.addEventListener('click',toggle);
+  cls.addEventListener('click',toggle);
+  snd.addEventListener('click',function(){{ sendMsg(inp.value); }});
+  inp.addEventListener('keydown',function(e){{ if(e.key==='Enter') sendMsg(inp.value); }});
   scroll2b();
-})();
-</script>"""
+}})();
+</script>
+</body>
+</html>"""
 
-st.markdown(_sage_css + _sage_html + _sage_js, unsafe_allow_html=True)
+_comp_sage.html(_sage_widget, height=80, scrolling=False)
+
 
 
 
