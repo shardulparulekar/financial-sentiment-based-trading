@@ -928,48 +928,57 @@ if st.session_state.sage_pending:
     else:
         try:
             import requests as _rq, os as _os
+            # Read token — secrets must be [huggingface] / token = "hf_..."
             try:    _hf = st.secrets["huggingface"]["token"]
-            except Exception: _hf = _os.getenv("HUGGINGFACE_TOKEN","")
-            _top2  = load_top_signals(n=10)
-            _sent2 = load_market_sentiment()
-            _ctx   = []
-            if _top2 is not None and not _top2.empty:
-                _ctx.append("Signals: " + ", ".join(
-                    f"{r['ticker']}: {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                    for _,r in _top2.head(5).iterrows()))
-            if _sent2:
-                _ctx.append("Sentiment: " + " | ".join(
-                    f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                    for mk,d in _sent2.items()))
-            _system = ("You are Sage, a concise financial signal assistant. "
-                       "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
-                       f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-            _prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{_system}<|eot_id|>"
-            for _hm in st.session_state.sage_msgs[-6:]:
-                _hr = "user" if _hm["role"]=="user" else "assistant"
-                _prompt += f"<|start_header_id|>{_hr}<|end_header_id|>\n{_hm['content']}<|eot_id|>"
-            _prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
-            if _hf:
+            except Exception: _hf = _os.getenv("HUGGINGFACE_TOKEN", "")
+
+            if not _hf:
+                _reply = "HuggingFace token not configured. Add [huggingface]\ntoken='hf_xxx' to Streamlit secrets."
+            else:
+                _top2  = load_top_signals(n=10)
+                _sent2 = load_market_sentiment()
+                _ctx   = []
+                if _top2 is not None and not _top2.empty:
+                    _ctx.append("Signals: " + ", ".join(
+                        f"{r['ticker']}: {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                        for _,r in _top2.head(5).iterrows()))
+                if _sent2:
+                    _ctx.append("Sentiment: " + " | ".join(
+                        f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                        for mk,d in _sent2.items()))
+                _system = ("You are Sage, a concise financial signal assistant. "
+                           "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
+                           f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
+                # Use Zephyr-7B — free, ungated, no licence approval needed
+                # Prompt format: <|system|>\n...<|user|>\n...<|assistant|>\n
+                _prompt = f"<|system|>\n{_system}\n"
+                for _hm in st.session_state.sage_msgs[-6:]:
+                    _hr = "user" if _hm["role"] == "user" else "assistant"
+                    _prompt += f"<|{_hr}|>\n{_hm['content']}\n"
+                _prompt += "<|assistant|>\n"
                 _resp = _rq.post(
-                    "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
+                    "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
                     headers={"Authorization": f"Bearer {_hf}"},
                     json={"inputs": _prompt, "parameters": {
-                        "max_new_tokens": 160, "temperature": 0.4,
+                        "max_new_tokens": 200,
+                        "temperature": 0.4,
                         "return_full_text": False,
-                        "stop": ["<|eot_id|>","<|start_header_id|>"]}},
-                    timeout=30)
+                        "stop": ["<|user|>", "<|system|>", "</s>"]}},
+                    timeout=60)
                 if _resp.status_code == 200:
                     _data = _resp.json()
-                    _text = (_data[0].get("generated_text","") if isinstance(_data,list) and _data else "").strip()
-                    for _s2 in ["<|eot_id|>","<|start_header_id|>"]:
-                        _text = _text[:_text.index(_s2)].strip() if _s2 in _text else _text
+                    _text = (_data[0].get("generated_text", "") if isinstance(_data, list) and _data else "").strip()
+                    # Strip any trailing stop tokens
+                    for _s2 in ["<|user|>", "<|system|>", "</s>"]:
+                        if _s2 in _text:
+                            _text = _text[:_text.index(_s2)].strip()
                     _reply = _text or "I couldn't generate a response."
                 elif _resp.status_code == 503:
-                    _reply = "Model is loading. Please try again in ~20 seconds."
+                    _reply = "Model is warming up — please try again in ~30 seconds."
+                elif _resp.status_code == 403:
+                    _reply = "HuggingFace token doesn't have access to this model. Check your token permissions."
                 else:
-                    _reply = f"Model error ({_resp.status_code}). Ticker spotlights still work — type a ticker symbol."
-            else:
-                _reply = "HuggingFace token not configured. Add [huggingface]\ntoken='hf_xxx' to Streamlit secrets."
+                    _reply = f"Model error ({_resp.status_code}): {_resp.text[:120]}"
         except Exception as _e:
             _reply = f"Error: {_e}"
 
@@ -1009,7 +1018,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
 
 /* ── FAB ── */
 #fab {{
-    position:fixed; bottom:3rem; right:1rem;
+    position:fixed; bottom:5rem; right:1rem;
     width:72px; height:72px; border-radius:18px; cursor:pointer;
     border:1.5px solid rgba(56,189,248,0.55);
     background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
@@ -1041,7 +1050,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     text-shadow:0 0 8px rgba(56,189,248,0.7);
 }}
 #ring {{
-    position:fixed; bottom:3rem; right:1rem;
+    position:fixed; bottom:5rem; right:1rem;
     width:72px; height:72px; border-radius:20px;
     border:2px solid rgba(56,189,248,0.4);
     animation:pulse 3s ease-out infinite; pointer-events:none;
@@ -1200,7 +1209,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     // Remove from normal flow entirely
     fe.style.cssText = [
       'position:fixed',
-      'bottom:2.5rem',
+      'bottom:4.5rem',
       'right:1rem',
       'width:80px',
       'height:80px',
@@ -1240,7 +1249,7 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     }} else {{
       fe.style.width  = '80px';
       fe.style.height = '80px';
-      fe.style.bottom = '2.5rem';
+      fe.style.bottom = '4.5rem';
       fe.style.right  = '1rem';
     }}
   }}
