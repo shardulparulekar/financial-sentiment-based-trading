@@ -830,6 +830,322 @@ _nav_html = (
 _nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
 components.html(_nav_html, height=42, scrolling=False)
 
+# ── Global Sage assistant (fixed top-right, persists across all tabs) ─────────
+if "sage_pending" not in st.session_state:
+    st.session_state.sage_pending = None
+if "sage_msgs"    not in st.session_state:
+    st.session_state.sage_msgs    = []
+
+if st.session_state.sage_pending:
+    _pending = st.session_state.sage_pending
+    st.session_state.sage_pending = None
+
+    _SK: dict = {}
+    for _m, _cfg in MARKET_CONFIG.items():
+        _sfx = _cfg.get("suffix", "")
+        for _t, _n in zip(_cfg["tickers"] + _cfg.get("us_adrs", []),
+                          _cfg["names"]   + _cfg.get("adr_names", [])):
+            _f = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
+            _SK[_f.upper()] = (_m, None, _t, _n)
+    for _ex, _ecfg in EU_EXCHANGES.items():
+        _sfx = _ecfg["suffix"]
+        for _t, _n in zip(_ecfg["tickers"] + _ecfg.get("us_exceptions", []),
+                          _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
+            _f = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
+            _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
+
+    def _sk_find(msg):
+        found = []
+        for w in msg.upper().split():
+            w = w.strip(".,!?()[]'\"")
+            if w in _SK and w not in found:
+                found.append(w)
+        return found
+
+    _found = _sk_find(_pending)
+    _reply = ""
+    if _found:
+        _ft = _found[0]
+        _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
+        _top = load_top_signals(n=20)
+        _sig = None
+        if _top is not None and not _top.empty:
+            _match = _top[_top["ticker"].str.upper() == _ft.upper()]
+            if not _match.empty:
+                _r = _match.iloc[0]
+                _sig = {"predicted": int(_r["predicted"]), "confidence": float(_r["confidence"]),
+                        "sentiment": float(_r["sentiment"]), "updated_at": _r["updated_at"],
+                        "trade_date": _r["trade_date"]}
+        if not _sig and _mkt:
+            try:
+                from src.data_ingestion      import DataIngestion
+                from src.sentiment_model     import SentimentModel
+                from src.feature_engineering import FeatureEngineer
+                import pytz as _ptz
+                _arts = DataIngestion().fetch_news(_ft, market=_mkt, exchange=_exch)
+                _sc   = SentimentModel().score_articles(_arts) if _arts else []
+                _fe   = FeatureEngineer().build_features(_sc) if _sc else None
+                if _fe is not None and not _fe.empty:
+                    _sc2   = float(_fe.iloc[-1].get("mean_score", 0))
+                    _now2  = datetime.now(_ptz.utc)
+                    _sig   = {"predicted": 1 if _sc2 > 0 else -1,
+                              "confidence": min(abs(_sc2)*2+0.5,0.99),
+                              "sentiment": _sc2, "updated_at": _now2,
+                              "trade_date": _now2, "live": True}
+            except Exception:
+                pass
+        if _sig and _mkt:
+            import pytz as _ptz2
+            _now3  = datetime.now(_ptz2.utc)
+            _is_up = _sig["predicted"] == 1
+            _scol  = "#22c55e" if _is_up else "#ef4444"
+            _slbl  = "bullish" if _sig["sentiment"] > 0.05 else ("bearish" if _sig["sentiment"] < -0.05 else "neutral")
+            _secs  = (_now3 - _sig["updated_at"]).total_seconds()
+            _age   = (f"{int(_secs//60)}m ago" if _secs < 3600
+                      else f"{int(_secs//3600)}h {int((_secs%3600)//60)}m ago")
+            _flag  = (_exch or _mkt or "").split(" ")[0]
+            _live  = " · live" if _sig.get("live") else ""
+            _reply = (
+                f"<div style='border-top:2px solid {_scol};border-radius:8px;"
+                f"padding:0.55rem 0.65rem;background:rgba(255,255,255,0.03)'>"
+                f"<div style='font-size:0.78rem;color:#94a3b8'>{_flag} <b>{_dt}</b>"
+                f" <span style='color:#475569'>{_co}</span></div>"
+                f"<div style='font-size:1rem;font-weight:700;color:{_scol}'>"
+                f"{'&#9650;' if _is_up else '&#9660;'} {'BUY' if _is_up else 'SELL'}</div>"
+                f"<div style='font-size:0.72rem;color:#94a3b8;margin-top:0.1rem'>"
+                f"{_sig['confidence']:.0%} conf · {_slbl} ({_sig['sentiment']:+.3f})</div>"
+                f"<div style='font-size:0.65rem;color:#475569;margin-top:0.15rem'>"
+                f"⏱ {_age}{_live}</div>"
+                f"<a href='?sage_open={_ft}' style='display:inline-block;margin-top:0.35rem;"
+                f"background:#1e3a5f;color:#60a5fa;font-size:0.72rem;"
+                f"padding:0.2rem 0.55rem;border-radius:6px;text-decoration:none'>"
+                f"📊 Open full analysis →</a></div>"
+            )
+        elif _mkt:
+            _reply = f"Couldn't fetch a live signal for <b>{_dt}</b> right now."
+        else:
+            _reply = f"<b>{_ft}</b> isn't in our tracked list."
+    else:
+        try:
+            import requests as _rq, os as _os
+            try:    _hf = st.secrets["huggingface"]["token"]
+            except Exception: _hf = _os.getenv("HUGGINGFACE_TOKEN","")
+            _top2  = load_top_signals(n=10)
+            _sent2 = load_market_sentiment()
+            _ctx   = []
+            if _top2 is not None and not _top2.empty:
+                _ctx.append("Signals: " + ", ".join(
+                    f"{r['ticker']}: {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                    for _,r in _top2.head(5).iterrows()))
+            if _sent2:
+                _ctx.append("Sentiment: " + " | ".join(
+                    f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                    for mk,d in _sent2.items()))
+            _system = ("You are Sage, a concise financial signal assistant. "
+                       "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
+                       f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
+            _prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{_system}<|eot_id|>"
+            for _hm in st.session_state.sage_msgs[-6:]:
+                _hr = "user" if _hm["role"]=="user" else "assistant"
+                _prompt += f"<|start_header_id|>{_hr}<|end_header_id|>\n{_hm['content']}<|eot_id|>"
+            _prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
+            if _hf:
+                _resp = _rq.post(
+                    "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
+                    headers={"Authorization": f"Bearer {_hf}"},
+                    json={"inputs": _prompt, "parameters": {
+                        "max_new_tokens": 160, "temperature": 0.4,
+                        "return_full_text": False,
+                        "stop": ["<|eot_id|>","<|start_header_id|>"]}},
+                    timeout=30)
+                if _resp.status_code == 200:
+                    _data = _resp.json()
+                    _text = (_data[0].get("generated_text","") if isinstance(_data,list) and _data else "").strip()
+                    for _s2 in ["<|eot_id|>","<|start_header_id|>"]:
+                        _text = _text[:_text.index(_s2)].strip() if _s2 in _text else _text
+                    _reply = _text or "I couldn't generate a response."
+                elif _resp.status_code == 503:
+                    _reply = "Model is loading. Please try again in ~20 seconds."
+                else:
+                    _reply = f"Model error ({_resp.status_code}). Ticker spotlights still work — type a ticker symbol."
+            else:
+                _reply = "HuggingFace token not configured. Add [huggingface]\ntoken='hf_xxx' to Streamlit secrets."
+        except Exception as _e:
+            _reply = f"Error: {_e}"
+
+    st.session_state.sage_msgs.append({"role":"user","content":_pending})
+    st.session_state.sage_msgs.append({"role":"assistant","content":_reply})
+
+_sage_hist = ""
+for _sm2 in st.session_state.sage_msgs[-16:]:
+    _c = _sm2["content"].replace("'", "&#39;")
+    if _sm2["role"] == "user":
+        _sage_hist += f"<div class=\'smsg suser\'>{_c}</div>"
+    else:
+        _sage_hist += f"<div class=\'smsg sbot\'>{_c}</div>"
+
+
+_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdzYmcnIGN4PSc1MCUnIGN5PSc1MCUnIHI9JzUwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nJTIzMDgyMDQwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPSclMjMwNTBmMWYnLz48L3JhZGlhbEdyYWRpZW50PjxmaWx0ZXIgaWQ9J3NnbG93JyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYmx1cicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzEnIG9wYWNpdHk9JzAuMycvPjxwb2x5bGluZSBwb2ludHM9JzYsMzggMTIsMzggMTUsMjYgMTguNSw1MCAyMiwyOCAyNS41LDQ0IDI5LDIzIDMyLjUsNDcgMzYsMzAgMzksNDIgNDIsMzggNDgsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzc2dsb3cpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nMycgZmlsbD0nJTIzMzhiZGY4JyBmaWx0ZXI9J3VybCglMjNzZ2xvdyknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSc2JyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuMTInLz48dGV4dCB4PSczNicgeT0nNjInIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOScgZm9udC13ZWlnaHQ9JzcwMCcgbGV0dGVyLXNwYWNpbmc9JzMnIGZpbGw9JyUyMzM4YmRmOCcgb3BhY2l0eT0nMC45Jz5TQUdFPC90ZXh0Pjwvc3ZnPg=="
+
+# Build Sage widget HTML — CSS uses {{}} escaping, JS uses string concatenation
+_sage_css = f"""<style>
+#sage-fab{{position:fixed;top:1rem;right:1rem;width:72px;height:72px;border-radius:18px;
+    cursor:pointer;border:1.5px solid rgba(56,189,248,0.45);
+    background:linear-gradient(135deg,#082040 0%,#050f1f 100%);padding:0;z-index:99999;
+    box-shadow:0 4px 20px rgba(56,189,248,0.3),0 8px 32px rgba(0,0,0,0.6);
+    transition:transform 0.2s ease,box-shadow 0.2s ease;}}
+#sage-fab:hover{{transform:scale(1.06) translateY(1px);
+    box-shadow:0 6px 28px rgba(56,189,248,0.5),0 8px 32px rgba(0,0,0,0.7);}}
+#sage-fab img{{width:72px;height:72px;border-radius:18px;display:block;}}
+#sage-fab::after{{content:'';position:absolute;inset:-3px;border-radius:20px;
+    border:1.5px solid rgba(56,189,248,0.35);
+    animation:sagepulse 2.8s ease-out infinite;pointer-events:none;}}
+@keyframes sagepulse{{0%{{opacity:0.7;transform:scale(1);}}70%{{opacity:0;transform:scale(1.2);}}100%{{opacity:0;transform:scale(1.2);}}}}
+#sage-panel{{position:fixed;top:5.5rem;right:1rem;width:360px;
+    max-height:calc(100vh - 7rem);background:#080f1e;
+    border:1px solid rgba(56,189,248,0.22);border-radius:20px;
+    display:none;flex-direction:column;
+    box-shadow:0 24px 64px rgba(0,0,0,0.8),0 0 0 1px rgba(56,189,248,0.07);
+    z-index:99998;overflow:hidden;animation:sageslide 0.22s ease;}}
+@keyframes sageslide{{from{{opacity:0;transform:translateY(-10px) scale(0.97);}}to{{opacity:1;transform:translateY(0) scale(1);}}}}
+#sage-panel.sopen{{display:flex;}}
+.sage-hdr{{display:flex;align-items:center;gap:0.6rem;padding:0.75rem 1rem;
+    background:linear-gradient(135deg,#0c1f3d 0%,#080f1e 100%);
+    border-bottom:1px solid rgba(56,189,248,0.13);flex-shrink:0;}}
+.sage-hdr img{{width:34px;height:34px;border-radius:10px;}}
+.sage-hname{{font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:1px;}}
+.sage-hsub{{font-size:0.67rem;color:#38bdf8;margin-top:0.05rem;}}
+.sage-hclose{{margin-left:auto;background:none;border:none;color:#334155;
+    font-size:1rem;cursor:pointer;padding:0.2rem 0.4rem;
+    border-radius:6px;transition:color 0.15s;}}
+.sage-hclose:hover{{color:#94a3b8;}}
+#sage-msgs{{flex:1;overflow-y:auto;padding:0.75rem;
+    display:flex;flex-direction:column;gap:0.45rem;scroll-behavior:smooth;}}
+#sage-msgs::-webkit-scrollbar{{width:3px;}}
+#sage-msgs::-webkit-scrollbar-thumb{{background:#1e3a5f;border-radius:2px;}}
+.smsg{{font-size:0.79rem;line-height:1.5;max-width:90%;word-break:break-word;}}
+.suser{{align-self:flex-end;background:linear-gradient(135deg,#1e3a5f,#152d4a);
+    color:#e2e8f0;padding:0.4rem 0.75rem;border-radius:14px 14px 2px 14px;}}
+.sbot{{align-self:flex-start;background:#0f1c2e;color:#cbd5e1;
+    padding:0.5rem 0.7rem;border-radius:2px 14px 14px 14px;
+    border:1px solid rgba(56,189,248,0.1);}}
+.sgreet{{align-self:center;text-align:center;
+    background:linear-gradient(135deg,#0c1f3d,#080f1e);
+    border:1px solid rgba(56,189,248,0.13);border-radius:12px;
+    padding:0.6rem 0.8rem;color:#94a3b8;font-size:0.76rem;max-width:100%;}}
+.styping{{display:flex;gap:4px;padding:0.4rem 0.7rem;align-self:flex-start;}}
+.styping span{{width:5px;height:5px;background:#38bdf8;border-radius:50%;animation:sbounce 1.2s infinite;}}
+.styping span:nth-child(2){{animation-delay:0.18s;}}
+.styping span:nth-child(3){{animation-delay:0.36s;}}
+@keyframes sbounce{{0%,60%,100%{{transform:translateY(0);}}30%{{transform:translateY(-6px);}}}}
+#sage-chips{{padding:0.45rem 0.75rem 0.2rem;display:flex;flex-wrap:wrap;gap:0.28rem;flex-shrink:0;}}
+.schip{{background:#0c1f3d;color:#38bdf8;border:1px solid rgba(56,189,248,0.22);
+    border-radius:20px;font-size:0.69rem;padding:0.2rem 0.52rem;
+    cursor:pointer;transition:all 0.15s;white-space:nowrap;}}
+.schip:hover{{background:#1e3a5f;border-color:#38bdf8;color:#7dd3fc;}}
+.sage-irow{{display:flex;gap:0.4rem;padding:0.55rem 0.75rem 0.65rem;
+    border-top:1px solid rgba(56,189,248,0.09);flex-shrink:0;}}
+#sage-inp{{flex:1;background:#0c1824;border:1px solid rgba(56,189,248,0.22);
+    border-radius:10px;color:#f1f5f9;font-size:0.79rem;
+    padding:0.4rem 0.7rem;outline:none;transition:border-color 0.15s;}}
+#sage-inp:focus{{border-color:#38bdf8;}}
+#sage-inp::placeholder{{color:#1e3a5f;}}
+#sage-send{{background:#0c1f3d;border:1px solid rgba(56,189,248,0.28);
+    border-radius:10px;color:#38bdf8;font-size:1.1rem;
+    padding:0 0.8rem;cursor:pointer;transition:all 0.15s;flex-shrink:0;}}
+#sage-send:hover{{background:#38bdf8;color:#050f1f;border-color:#38bdf8;}}
+@media(max-width:480px){{
+    #sage-panel{{width:calc(100vw - 1.5rem);right:0.75rem;}}
+    #sage-fab{{width:60px;height:60px;border-radius:14px;}}
+    #sage-fab img{{width:60px;height:60px;border-radius:14px;}}
+}}
+</style>"""
+
+_sage_html = f"""<button id="sage-fab" aria-label="Open Sage" title="Ask Sage">
+  <img src="{_SAGE_URI}" alt="Sage"/>
+</button>
+<div id="sage-panel" role="dialog" aria-label="Sage assistant">
+  <div class="sage-hdr">
+    <img src="{_SAGE_URI}" alt="Sage"/>
+    <div><div class="sage-hname">SAGE</div><div class="sage-hsub">Sentiment Signal Assistant</div></div>
+    <button class="sage-hclose" id="sage-hclose" aria-label="Close">&#x2715;</button>
+  </div>
+  <div id="sage-msgs">
+    <div class="sgreet">&#x1F44B; Ask me about any stock or market.<br>
+    Type a ticker like <b>NVDA</b> for a quick signal.</div>
+    {_sage_hist}
+  </div>
+  <div id="sage-chips"></div>
+  <div class="sage-irow">
+    <input id="sage-inp" type="text" autocomplete="off" placeholder="Ask about a stock or market&hellip;"/>
+    <button id="sage-send" aria-label="Send">&#x2191;</button>
+  </div>
+</div>"""
+
+# JS as plain string — no f-string so single braces are fine
+_sage_js = """<script>
+(function() {
+  var fab    = document.getElementById('sage-fab'),
+      panel  = document.getElementById('sage-panel'),
+      closeB = document.getElementById('sage-hclose'),
+      inp    = document.getElementById('sage-inp'),
+      sendB  = document.getElementById('sage-send'),
+      msgs   = document.getElementById('sage-msgs'),
+      chips  = document.getElementById('sage-chips');
+  var isOpen = false, chipsShown = false;
+  var suggs  = [
+    "What's the strongest signal today?",
+    "Which markets are bearish?",
+    "Explain the top BUY signal",
+    "Any high-confidence SELL signals?"
+  ];
+
+  function toggle() {
+    isOpen = !isOpen;
+    panel.classList.toggle('sopen', isOpen);
+    if (isOpen) { scroll2b(); inp.focus(); if (!chipsShown) { buildChips(); chipsShown = true; } }
+  }
+  function scroll2b() { msgs.scrollTop = msgs.scrollHeight; }
+
+  function buildChips() {
+    chips.innerHTML = '';
+    suggs.forEach(function(s) {
+      var b = document.createElement('button');
+      b.className = 'schip'; b.textContent = s;
+      b.addEventListener('click', function() { sendMsg(s); });
+      chips.appendChild(b);
+    });
+  }
+
+  function sendMsg(text) {
+    if (!text.trim()) return;
+    var ub = document.createElement('div');
+    ub.className = 'smsg suser'; ub.textContent = text;
+    msgs.appendChild(ub); scroll2b();
+    inp.value = ''; chips.innerHTML = '';
+    var t = document.createElement('div');
+    t.className = 'styping';
+    t.innerHTML = '<span></span><span></span><span></span>';
+    msgs.appendChild(t); scroll2b();
+    setTimeout(function() {
+      var url = new URL(window.location.href);
+      url.searchParams.set('sage_msg', encodeURIComponent(text));
+      window.location.href = url.toString();
+    }, 380);
+  }
+
+  fab.addEventListener('click', toggle);
+  closeB.addEventListener('click', toggle);
+  sendB.addEventListener('click', function() { sendMsg(inp.value); });
+  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendMsg(inp.value); });
+  scroll2b();
+})();
+</script>"""
+
+st.markdown(_sage_css + _sage_html + _sage_js, unsafe_allow_html=True)
+
+
+
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
 
@@ -868,6 +1184,21 @@ st.divider()
 # ══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.active_tab == "home":
+
+    # ── Sage query param handlers ─────────────────────────────────────────────
+    _sage_open = st.query_params.get("sage_open")
+    _sage_msg  = st.query_params.get("sage_msg")
+    if _sage_open:
+        st.query_params.clear()
+        _sm, _se, _sd, _sc = resolve_market_for_ticker(_sage_open)
+        load_top_signals.clear()
+        add_ticker_tab(_sage_open, _sd, _sc, _sm, _se)
+        st.rerun()
+    if _sage_msg:
+        import urllib.parse as _up
+        st.session_state.sage_pending = _up.unquote(_sage_msg)
+        st.query_params.clear()
+        st.rerun()
 
     # ── Weekend / market closed banner ───────────────────────────────────────
     mkt_status = get_market_status()
@@ -1331,541 +1662,6 @@ if st.session_state.active_tab == "home":
             st.info(f"No results found for **'{news_query}'**.")
 
 
-
-
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 💬 SAGE — floating chat assistant (fixed bottom-right, overlay panel)
-    # Implemented via components.html so it stays fixed on scroll.
-    # Communicates back to Streamlit via ?sage_open=TICKER query param.
-    # ══════════════════════════════════════════════════════════════════════════
-
-    # ── Handle incoming messages and ticker opens from Sage iframe ────────────
-    _sage_open = st.query_params.get("sage_open")
-    _sage_msg  = st.query_params.get("sage_msg")
-
-    if _sage_open:
-        st.query_params.clear()
-        _sm, _se, _sd, _sc = resolve_market_for_ticker(_sage_open)
-        load_top_signals.clear()
-        add_ticker_tab(_sage_open, _sd, _sc, _sm, _se)
-        st.rerun()
-
-    if _sage_msg:
-        import urllib.parse as _up
-        _decoded = _up.unquote(_sage_msg)
-        st.query_params.clear()
-        st.session_state.sage_pending = _decoded
-        st.rerun()
-
-    # ── Build ticker lookup ────────────────────────────────────────────────────
-    _SAGE_KNOWN: dict = {}
-    for _m, _cfg in MARKET_CONFIG.items():
-        _sfx = _cfg.get("suffix", "")
-        for _t, _n in zip(_cfg["tickers"] + _cfg.get("us_adrs", []),
-                          _cfg["names"]   + _cfg.get("adr_names", [])):
-            _full = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
-            _SAGE_KNOWN[_full.upper()] = (_m, None, _t, _n)
-    for _ex, _ecfg in EU_EXCHANGES.items():
-        _sfx = _ecfg["suffix"]
-        for _t, _n in zip(_ecfg["tickers"] + _ecfg.get("us_exceptions", []),
-                          _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
-            _full = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
-            _SAGE_KNOWN[_full.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
-
-    def _sage_find_ticker(msg: str) -> list[str]:
-        found = []
-        for w in msg.upper().split():
-            w = w.strip(".,!?()[]'\"")
-            if w in _SAGE_KNOWN and w not in found:
-                found.append(w)
-        return found
-
-    def _sage_signal(full_t: str, top_df) -> dict | None:
-        if top_df is None or top_df.empty:
-            return None
-        m = top_df[top_df["ticker"].str.upper() == full_t.upper()]
-        return None if m.empty else {
-            "predicted":  int(m.iloc[0]["predicted"]),
-            "confidence": float(m.iloc[0]["confidence"]),
-            "sentiment":  float(m.iloc[0]["sentiment"]),
-            "updated_at": m.iloc[0]["updated_at"],
-            "trade_date": m.iloc[0]["trade_date"],
-        }
-
-    def _sage_live(full_t: str, mkt: str, exch) -> dict | None:
-        try:
-            from src.data_ingestion      import DataIngestion
-            from src.sentiment_model     import SentimentModel
-            from src.feature_engineering import FeatureEngineer
-            import pytz
-            articles = DataIngestion().fetch_news(full_t, market=mkt, exchange=exch)
-            if not articles: return None
-            scored   = SentimentModel().score_articles(articles)
-            if not scored: return None
-            features = FeatureEngineer().build_features(scored)
-            if features is None or features.empty: return None
-            last  = features.iloc[-1]
-            score = float(last.get("mean_score", 0))
-            return {"predicted": 1 if score > 0 else -1,
-                    "confidence": min(abs(score)*2+0.5, 0.99),
-                    "sentiment": score,
-                    "updated_at": datetime.now(pytz.utc),
-                    "trade_date": datetime.now(pytz.utc), "live": True}
-        except Exception:
-            return None
-
-    def _sage_spotlight(sig: dict, display_t: str, company: str,
-                        mkt: str, exch, full_t: str) -> str:
-        import pytz
-        now   = datetime.now(pytz.utc)
-        is_up = sig["predicted"] == 1
-        icon  = "▲" if is_up else "▼"
-        lbl   = "BUY" if is_up else "SELL"
-        col   = "#22c55e" if is_up else "#ef4444"
-        s     = sig["sentiment"]
-        slbl  = "bullish" if s > 0.05 else ("bearish" if s < -0.05 else "neutral")
-        secs  = (now - sig["updated_at"]).total_seconds()
-        age   = (f"{int(secs//60)}m ago" if secs < 3600
-                 else f"{int(secs//3600)}h {int((secs%3600)//60)}m ago")
-        flag  = (exch or mkt or "").split(" ")[0]
-        live  = " · live" if sig.get("live") else ""
-        open_url = f"?sage_open={full_t}"
-        return (
-            f"<div style='border-top:2px solid {col};border-radius:8px;"
-            f"padding:0.6rem 0.7rem;background:rgba(255,255,255,0.03);margin:0.3rem 0'>"
-            f"<div style='font-size:0.78rem;color:#94a3b8'>{flag} {display_t}"
-            f"<span style='color:#475569'> · {company}</span></div>"
-            f"<div style='font-size:1rem;font-weight:700;color:{col}'>{icon} {lbl}</div>"
-            f"<div style='font-size:0.72rem;color:#94a3b8;margin-top:0.1rem'>"
-            f"{sig['confidence']:.0%} confidence · {slbl} ({s:+.3f})</div>"
-            f"<div style='font-size:0.65rem;color:#475569;margin-top:0.15rem'>"
-            f"⏱ {age}{live}</div>"
-            f"<a href='{open_url}' style='display:inline-block;margin-top:0.4rem;"
-            f"background:#1e3a5f;color:#60a5fa;font-size:0.72rem;padding:0.25rem 0.6rem;"
-            f"border-radius:6px;text-decoration:none'>📊 Open full analysis →</a>"
-            f"</div>"
-        )
-
-    def _sage_hf(messages: list[dict], context: str) -> str:
-        try:
-            import requests as _rq
-            try:    hf = st.secrets["huggingface"]["token"]
-            except Exception:
-                import os; hf = os.getenv("HUGGINGFACE_TOKEN","")
-            if not hf:
-                return ("⚠️ HuggingFace token not configured. "
-                        "Add [huggingface]\ntoken = \"hf_xxx\" to Streamlit secrets.")
-            system = (
-                "You are Sage, a concise financial signal assistant for Sentiment Signal. "
-                "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
-                f"Context:\n{context}"
-            )
-            prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system}<|eot_id|>"
-            for m in messages[-6:]:
-                r = "user" if m["role"]=="user" else "assistant"
-                prompt += f"<|start_header_id|>{r}<|end_header_id|>\n{m['content']}<|eot_id|>"
-            prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
-            resp = _rq.post(
-                "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
-                headers={"Authorization": f"Bearer {hf}"},
-                json={"inputs": prompt, "parameters": {
-                    "max_new_tokens": 160, "temperature": 0.4,
-                    "return_full_text": False,
-                    "stop": ["<|eot_id|>","<|start_header_id|>"]}},
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                text = (data[0].get("generated_text","") if isinstance(data,list) and data else "").strip()
-                for s in ["<|eot_id|>","<|start_header_id|>"]:
-                    text = text[:text.index(s)].strip() if s in text else text
-                return text or "I couldn't generate a response. Please try again."
-            elif resp.status_code == 503:
-                return "Model is loading (cold start). Try again in ~20 seconds."
-            elif resp.status_code == 404:
-                return "AI model currently unavailable. Ticker spotlights still work — just type a ticker symbol."
-            else:
-                return f"Model error ({resp.status_code}). Please try again."
-        except Exception as e:
-            return f"Connection error: {e}"
-
-    def _sage_context(top_df, sentiment_data: dict) -> str:
-        lines = []
-        if top_df is not None and not top_df.empty:
-            sigs = [f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                    for _, r in top_df.head(5).iterrows()]
-            lines.append("Top signals: " + ", ".join(sigs))
-        if sentiment_data:
-            lines.append("Sentiment: " + " | ".join(
-                f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                for mk, d in sentiment_data.items()))
-        return "\n".join(lines) or "No data."
-
-    # ── Session state ─────────────────────────────────────────────────────────
-    if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
-    if "sage_open"    not in st.session_state: st.session_state.sage_open    = False
-    if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
-    if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
-
-    # Process any pending message (set by JS postMessage bridge)
-    if st.session_state.sage_pending:
-        _pending = st.session_state.sage_pending
-        st.session_state.sage_pending = None
-        top_df_s = load_top_signals(n=10)
-        sent_s   = load_market_sentiment()
-        found    = _sage_find_ticker(_pending)
-        if found:
-            full_t = found[0]
-            mkt,exch,dt,co = _SAGE_KNOWN.get(full_t,(None,None,full_t,full_t))
-            sig = _sage_signal(full_t, top_df_s)
-            if not sig and mkt:
-                sig = _sage_live(full_t, mkt, exch)
-            if sig and mkt:
-                reply = _sage_spotlight(sig, dt, co, mkt, exch, full_t)
-                st.session_state.sage_tickers[full_t] = (mkt,exch,dt,co)
-            elif mkt:
-                reply = f"Couldn't fetch a live signal for <b>{dt}</b> right now."
-                st.session_state.sage_tickers[full_t] = (mkt,exch,dt,co)
-            else:
-                reply = f"<b>{full_t}</b> isn't in our tracked list."
-        else:
-            api_msgs = [{"role":m["role"],"content":m["content"]}
-                        for m in st.session_state.sage_msgs
-                        if "<div" not in m.get("content","")]
-            reply = _sage_hf(api_msgs, _sage_context(top_df_s, sent_s))
-        st.session_state.sage_msgs.append({"role":"assistant","content":reply})
-
-    # ── Build chat history HTML ───────────────────────────────────────────────
-    history_html = ""
-    for msg in st.session_state.sage_msgs[-12:]:
-        c = msg["content"]
-        if msg["role"] == "user":
-            history_html += (
-                f"<div class='msg user'>{c}</div>"
-            )
-        else:
-            history_html += (
-                f"<div class='msg bot'>{c}</div>"
-            )
-
-    # ── Sage avatar SVG (base64-encoded for use in CSS/HTML) ──────────────────
-    sage_svg_raw = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 56'>
-  <defs>
-    <radialGradient id='bg' cx='50%' cy='50%' r='50%'>
-      <stop offset='0%' stop-color='%230f2744'/>
-      <stop offset='100%' stop-color='%230a1628'/>
-    </radialGradient>
-    <filter id='glow' x='-20%' y='-20%' width='140%' height='140%'>
-      <feGaussianBlur stdDeviation='1.2' result='blur'/>
-      <feMerge><feMergeNode in='blur'/><feMergeNode in='SourceGraphic'/></feMerge>
-    </filter>
-  </defs>
-  <circle cx='28' cy='28' r='28' fill='url(%23bg)'/>
-  <circle cx='28' cy='28' r='26.5' fill='none' stroke='%2338bdf8' stroke-width='0.6' opacity='0.35'/>
-  <polyline points='7,28 13,28 16,17 19.5,39 23,21 26.5,35 30,19 33.5,37 37,24 40,32 43,28 49,28'
-    fill='none' stroke='%2338bdf8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'
-    filter='url(%23glow)' opacity='0.95'/>
-  <circle cx='43' cy='28' r='3' fill='%2338bdf8' filter='url(%23glow)' opacity='0.9'/>
-  <circle cx='43' cy='28' r='5' fill='%2338bdf8' opacity='0.15'/>
-</svg>"""
-
-    import base64 as _b64
-    sage_b64 = _b64.b64encode(sage_svg_raw.encode()).decode()
-    sage_data_uri = f"data:image/svg+xml;base64,{sage_b64}"
-
-    # Suggestions as JS array
-    suggestions_js = '["What\'s the strongest signal today?","Which markets are bearish?","Explain the top BUY signal","Any high-confidence SELL signals?"]'
-
-    # ── Render Sage floating widget in right-aligned column ───────────────────
-    import streamlit.components.v1 as _comp
-    _, _sage_col = st.columns([3, 1])
-    with _sage_col:
-        _comp.html(f"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  * {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
-  body {{ background:transparent; overflow:visible; height:80px; position:relative; }}
-
-  /* ── Avatar button ── */
-  #sage-btn {{
-    position:absolute; bottom:0.5rem; right:0;
-    width:56px; height:56px;
-    border-radius:50%;
-    cursor:pointer;
-    border:none; background:none; padding:0;
-    box-shadow:0 4px 24px rgba(56,189,248,0.35), 0 2px 8px rgba(0,0,0,0.5);
-    transition:transform 0.2s ease, box-shadow 0.2s ease;
-    z-index:10001;
-  }}
-  #sage-btn:hover {{
-    transform:scale(1.08) translateY(-2px);
-    box-shadow:0 6px 32px rgba(56,189,248,0.55), 0 2px 12px rgba(0,0,0,0.6);
-  }}
-  #sage-btn img {{ width:56px; height:56px; border-radius:50%; display:block; }}
-
-  /* Pulse ring animation */
-  #sage-btn::after {{
-    content:'';
-    position:absolute; inset:-4px;
-    border-radius:50%;
-    border:2px solid rgba(56,189,248,0.4);
-    animation:pulse 2.4s ease-out infinite;
-  }}
-  @keyframes pulse {{
-    0%   {{ opacity:0.8; transform:scale(1); }}
-    70%  {{ opacity:0;   transform:scale(1.35); }}
-    100% {{ opacity:0;   transform:scale(1.35); }}
-  }}
-
-  /* ── Chat panel ── */
-  #sage-panel {{
-    position:absolute; bottom:4.5rem; right:0;
-    width:360px;
-    max-height:520px;
-    background:#0d1117;
-    border:1px solid #1e3a5f;
-    border-radius:20px;
-    display:flex; flex-direction:column;
-    box-shadow:0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(56,189,248,0.1);
-    z-index:10000;
-    transition:opacity 0.25s ease, transform 0.25s ease;
-    overflow:hidden;
-  }}
-  #sage-panel.hidden {{
-    opacity:0; transform:translateY(12px) scale(0.97);
-    pointer-events:none;
-  }}
-
-  /* Header */
-  .sage-header {{
-    display:flex; align-items:center; gap:0.6rem;
-    padding:0.8rem 1rem;
-    background:linear-gradient(135deg,#0f2744 0%,#0a1628 100%);
-    border-bottom:1px solid #1e3a5f;
-    flex-shrink:0;
-  }}
-  .sage-header img {{ width:32px; height:32px; border-radius:50%; }}
-  .sage-name {{ font-size:0.9rem; font-weight:600; color:#f1f5f9; }}
-  .sage-sub  {{ font-size:0.68rem; color:#38bdf8; margin-top:0.05rem; }}
-  .sage-close {{
-    margin-left:auto; background:none; border:none;
-    color:#475569; font-size:1.1rem; cursor:pointer;
-    padding:0.2rem 0.4rem; border-radius:6px;
-    transition:color 0.15s;
-  }}
-  .sage-close:hover {{ color:#f1f5f9; }}
-
-  /* Messages */
-  #sage-msgs {{
-    flex:1; overflow-y:auto; padding:0.75rem;
-    display:flex; flex-direction:column; gap:0.5rem;
-    scroll-behavior:smooth;
-  }}
-  #sage-msgs::-webkit-scrollbar {{ width:4px; }}
-  #sage-msgs::-webkit-scrollbar-track {{ background:transparent; }}
-  #sage-msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f; border-radius:2px; }}
-
-  .msg {{ font-size:0.8rem; line-height:1.45; max-width:88%; word-break:break-word; }}
-  .msg.user {{
-    align-self:flex-end;
-    background:#1e3a5f; color:#f1f5f9;
-    padding:0.4rem 0.75rem;
-    border-radius:14px 14px 2px 14px;
-  }}
-  .msg.bot {{
-    align-self:flex-start;
-    background:#111827; color:#cbd5e1;
-    padding:0.5rem 0.75rem;
-    border-radius:2px 14px 14px 14px;
-    border:1px solid #1e293b;
-  }}
-
-  /* Typing indicator */
-  .typing {{ display:flex; gap:4px; padding:0.5rem 0.75rem; align-self:flex-start; }}
-  .typing span {{
-    width:6px; height:6px; background:#38bdf8; border-radius:50%;
-    animation:bounce 1.2s infinite;
-  }}
-  .typing span:nth-child(2) {{ animation-delay:0.2s; }}
-  .typing span:nth-child(3) {{ animation-delay:0.4s; }}
-  @keyframes bounce {{
-    0%,60%,100% {{ transform:translateY(0); }}
-    30%          {{ transform:translateY(-6px); }}
-  }}
-
-  /* Suggestions */
-  #sage-suggestions {{
-    padding:0.5rem 0.75rem 0;
-    display:flex; flex-wrap:wrap; gap:0.35rem;
-    flex-shrink:0;
-  }}
-  .chip {{
-    background:#0f2744; color:#38bdf8;
-    border:1px solid #1e3a5f; border-radius:20px;
-    font-size:0.7rem; padding:0.25rem 0.6rem;
-    cursor:pointer; transition:all 0.15s;
-    white-space:nowrap;
-  }}
-  .chip:hover {{ background:#1e3a5f; color:#7dd3fc; border-color:#38bdf8; }}
-
-  /* Input row */
-  .sage-input-row {{
-    display:flex; gap:0.4rem;
-    padding:0.6rem 0.75rem 0.75rem;
-    border-top:1px solid #1e293b;
-    flex-shrink:0;
-  }}
-  #sage-input {{
-    flex:1; background:#111827; border:1px solid #1e3a5f;
-    border-radius:10px; color:#f1f5f9; font-size:0.8rem;
-    padding:0.45rem 0.7rem; outline:none;
-    transition:border-color 0.15s;
-  }}
-  #sage-input:focus {{ border-color:#38bdf8; }}
-  #sage-input::placeholder {{ color:#334155; }}
-  #sage-send {{
-    background:#1e3a5f; border:none; border-radius:10px;
-    color:#38bdf8; font-size:1rem; padding:0 0.8rem;
-    cursor:pointer; transition:all 0.15s; flex-shrink:0;
-  }}
-  #sage-send:hover {{ background:#38bdf8; color:#0a1628; }}
-
-  @media (max-width:480px) {{
-    #sage-panel {{ width:calc(100vw - 2rem); right:1rem; }}
-  }}
-</style>
-</head>
-<body>
-
-<!-- Avatar toggle button -->
-<button id="sage-btn" title="Ask Sage" aria-label="Open Sage assistant">
-  <img src="{sage_data_uri}" alt="Sage"/>
-</button>
-
-<!-- Chat panel -->
-<div id="sage-panel" class="hidden">
-  <div class="sage-header">
-    <img src="{sage_data_uri}" alt="Sage"/>
-    <div>
-      <div class="sage-name">Sage</div>
-      <div class="sage-sub">Sentiment Signal Assistant</div>
-    </div>
-    <button class="sage-close" id="sage-close" aria-label="Close">✕</button>
-  </div>
-
-  <div id="sage-msgs">
-    <div class="msg bot">
-      Hi! I'm <strong>Sage</strong> 👋 Ask me about any stock signal, market sentiment, or type a ticker like <em>NVDA</em> or <em>ASML</em> for a quick spotlight.
-    </div>
-    {history_html}
-  </div>
-
-  <div id="sage-suggestions"></div>
-
-  <div class="sage-input-row">
-    <input id="sage-input" type="text" placeholder="Ask about a stock or market…" autocomplete="off"/>
-    <button id="sage-send" aria-label="Send">↑</button>
-  </div>
-</div>
-
-<script>
-const panel   = document.getElementById('sage-panel');
-const btn     = document.getElementById('sage-btn');
-const closeB  = document.getElementById('sage-close');
-const input   = document.getElementById('sage-input');
-const sendBtn = document.getElementById('sage-send');
-const msgs    = document.getElementById('sage-msgs');
-const sugBox  = document.getElementById('sage-suggestions');
-
-let isOpen = false;
-
-function togglePanel() {{
-  isOpen = !isOpen;
-  panel.classList.toggle('hidden', !isOpen);
-  // Resize the iframe to give the panel room to render
-  if (isOpen) {{
-    document.body.style.height = '620px';
-    window.frameElement && (window.frameElement.style.height = '620px');
-    scrollToBottom();
-    input.focus();
-    if (msgs.children.length === 1) buildSuggestions();
-  }} else {{
-    document.body.style.height = '80px';
-    window.frameElement && (window.frameElement.style.height = '80px');
-  }}
-}}
-
-btn.addEventListener('click', togglePanel);
-closeB.addEventListener('click', togglePanel);
-
-// Build suggestion chips
-const suggestions = {suggestions_js};
-function buildSuggestions() {{
-  sugBox.innerHTML = '';
-  suggestions.forEach(s => {{
-    const chip = document.createElement('button');
-    chip.className = 'chip';
-    chip.textContent = s;
-    chip.addEventListener('click', () => sendMessage(s));
-    sugBox.appendChild(chip);
-  }});
-}}
-buildSuggestions();
-
-function scrollToBottom() {{
-  msgs.scrollTop = msgs.scrollHeight;
-}}
-
-function addMsg(text, role) {{
-  const div = document.createElement('div');
-  div.className = `msg ${{role}}`;
-  div.innerHTML = text;
-  msgs.appendChild(div);
-  scrollToBottom();
-}}
-
-function showTyping() {{
-  const t = document.createElement('div');
-  t.className = 'typing'; t.id = 'sage-typing';
-  t.innerHTML = '<span></span><span></span><span></span>';
-  msgs.appendChild(t);
-  scrollToBottom();
-  return t;
-}}
-
-function sendMessage(text) {{
-  if (!text.trim()) return;
-  addMsg(text, 'user');
-  input.value = '';
-  sugBox.innerHTML = ''; // hide chips after first use
-
-  const typing = showTyping();
-
-  // Send to parent Streamlit via postMessage + URL param
-  window.parent.postMessage({{sage_msg: text}}, '*');
-
-  // Navigate parent to trigger rerun with message
-  setTimeout(() => {{
-    typing.remove();
-    // Use URL param as the reliable Streamlit bridge
-    const url = new URL(window.parent.location.href);
-    url.searchParams.set('sage_msg', encodeURIComponent(text));
-    window.parent.location.href = url.toString();
-  }}, 300);
-}}
-
-sendBtn.addEventListener('click', () => sendMessage(input.value));
-input.addEventListener('keydown', e => {{
-  if (e.key === 'Enter') sendMessage(input.value);
-}});
-
-scrollToBottom();
-</script>
-</body>
-        </html>""", height=80, scrolling=False)
 
 
 
