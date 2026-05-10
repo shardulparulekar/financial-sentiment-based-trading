@@ -988,26 +988,33 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
 # ── Sage: CSS to position the components.html iframe ─────────────────────────
 import streamlit.components.v1 as _comp_sage
 
-# Inject CSS that targets Streamlit's iframe wrapper for our Sage widget.
-# We use a unique key on the column container to target it specifically.
+# Anchor the iframe fixed at centre-right. No transform — JS only changes w/h.
 st.markdown("""
 <style>
-/* Position Sage iframe fixed at vertical centre, right edge */
+/* Sage FAB: fixed centre-right when closed. JS moves to top:0 / full height when open. */
 [data-testid="stVerticalBlock"] iframe[height="80"] {
     position: fixed !important;
-    right: 1rem !important;
+    right: 0 !important;
     top: 50vh !important;
-    transform: translateY(-50%) !important;
+    margin-top: -40px !important;   /* half of 80px to truly centre */
     z-index: 99999 !important;
     border: none !important;
+    background: transparent !important;
     overflow: visible !important;
-    transition: width 0.25s ease, height 0.25s ease !important;
+    transition: width 0.28s cubic-bezier(.4,0,.2,1),
+                height 0.28s cubic-bezier(.4,0,.2,1),
+                top 0.28s cubic-bezier(.4,0,.2,1),
+                margin-top 0.28s cubic-bezier(.4,0,.2,1) !important;
+}
+/* When Sage panel is open, push main content left like a sidebar */
+body.sage-open .block-container {
+    padding-right: 26vw !important;
+    transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Build Sage widget HTML
-_SAGE_URI_WIDGET = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdzYmcnIGN4PSc1MCUnIGN5PSc1MCUnIHI9JzUwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nJTIzMDgyMDQwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPSclMjMwNTBmMWYnLz48L3JhZGlhbEdyYWRpZW50PjxmaWx0ZXIgaWQ9J3NnbG93JyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYmx1cicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzEnIG9wYWNpdHk9JzAuMycvPjxwb2x5bGluZSBwb2ludHM9JzYsMzggMTIsMzggMTUsMjYgMTguNSw1MCAyMiwyOCAyNS41LDQ0IDI5LDIzIDMyLjUsNDcgMzYsMzAgMzksNDIgNDIsMzggNDgsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzc2dsb3cpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nMycgZmlsbD0nJTIzMzhiZGY4JyBmaWx0ZXI9J3VybCglMjNzZ2xvdyknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSc2JyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuMTInLz48dGV4dCB4PSczNicgeT0nNjInIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOScgZm9udC13ZWlnaHQ9JzcwMCcgbGV0dGVyLXNwYWNpbmc9JzMnIGZpbGw9JyUyMzM4YmRmOCcgb3BhY2l0eT0nMC45Jz5TQUdFPC90ZXh0Pjwvc3ZnPg=="
+# Build Sage widget HTML — FAB uses a pure inline SVG ECG animation + SAGE label
 
 _sage_hist_html = ""
 for _shm in st.session_state.sage_msgs[-16:]:
@@ -1017,6 +1024,13 @@ for _shm in st.session_state.sage_msgs[-16:]:
     else:
         _sage_hist_html += f'<div class="msg mb">{_shc}</div>'
 
+# ── Sage widget ────────────────────────────────────────────────────────────────
+# The iframe is anchored fixed centre-right via external CSS (top:50vh, margin-top:-40px).
+# setSize() only changes width/height — zero transform conflicts.
+# When open: iframe grows to 376×640, FAB hides, panel shows flush right edge.
+# When closed: iframe shrinks to 80×80, FAB shows, panel hides.
+# body.sage-open is toggled on window.parent.document.body so the Streamlit
+# block-container gets padding-right to avoid content being hidden under the panel.
 _sage_widget = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1024,87 +1038,187 @@ _sage_widget = f"""<!DOCTYPE html>
 <style>
 * {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
 html,body {{ background:transparent; overflow:visible; width:80px; height:80px; }}
+
+/* ── FAB button ── */
 #fab {{
-    position:absolute; bottom:4px; right:4px;
+    position:absolute;
+    top:50%; left:50%; transform:translate(-50%,-50%);
     width:72px; height:72px; border-radius:18px; cursor:pointer;
-    border:1.5px solid rgba(56,189,248,0.5);
-    background:linear-gradient(135deg,#082040 0%,#050f1f 100%);
-    padding:0;
-    box-shadow:0 4px 20px rgba(56,189,248,0.4),0 8px 32px rgba(0,0,0,0.7);
-    transition:transform 0.2s,box-shadow 0.2s;
+    border:1.5px solid rgba(56,189,248,0.55);
+    background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
+    padding:0; overflow:hidden;
+    box-shadow:0 4px 24px rgba(56,189,248,0.35), 0 8px 32px rgba(0,0,0,0.8);
+    transition:transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
 }}
-#fab:hover {{ transform:scale(1.07); box-shadow:0 6px 28px rgba(56,189,248,0.6); }}
-#fab img {{ width:72px; height:72px; border-radius:18px; display:block; }}
+#fab:hover {{ transform:translate(-50%,-50%) scale(1.08); box-shadow:0 6px 32px rgba(56,189,248,0.6); }}
+
+/* Animated ECG line inside FAB */
+#fab svg.ecg {{ width:52px; height:28px; overflow:visible; }}
+#fab svg.ecg polyline {{
+    fill:none; stroke:#38bdf8; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:120; stroke-dashoffset:120;
+    animation:draw 2.4s ease-in-out infinite;
+    filter:drop-shadow(0 0 3px rgba(56,189,248,0.8));
+}}
+@keyframes draw {{
+    0%   {{ stroke-dashoffset:120; opacity:0.3; }}
+    40%  {{ stroke-dashoffset:0;   opacity:1; }}
+    70%  {{ stroke-dashoffset:0;   opacity:1; }}
+    100% {{ stroke-dashoffset:-120; opacity:0.3; }}
+}}
+/* SAGE label */
+#fab .flabel {{
+    font-family:monospace; font-size:9px; font-weight:700;
+    letter-spacing:3px; color:#38bdf8; opacity:0.9;
+    text-shadow:0 0 8px rgba(56,189,248,0.7);
+}}
+
+/* Outer pulse ring */
 #ring {{
-    position:absolute; bottom:0px; right:0px;
+    position:absolute; top:50%; left:50%;
     width:80px; height:80px; border-radius:20px;
-    border:2px solid rgba(56,189,248,0.35);
-    animation:pulse 2.8s ease-out infinite; pointer-events:none;
+    border:2px solid rgba(56,189,248,0.4);
+    transform:translate(-50%,-50%);
+    animation:pulse 3s ease-out infinite; pointer-events:none;
 }}
-@keyframes pulse {{ 0%{{opacity:0.6;transform:scale(1);}} 70%{{opacity:0;transform:scale(1.2);}} 100%{{opacity:0;transform:scale(1.2);}} }}
+@keyframes pulse {{
+    0%   {{ opacity:0.7; transform:translate(-50%,-50%) scale(1);   }}
+    70%  {{ opacity:0;   transform:translate(-50%,-50%) scale(1.28); }}
+    100% {{ opacity:0;   transform:translate(-50%,-50%) scale(1.28); }}
+}}
+
+/* ── Panel ── (anchored top-right inside the iframe, full viewport height) */
 #panel {{
-    display:none; position:absolute; bottom:88px; right:0;
-    width:360px; max-height:520px;
-    background:#080f1e; border:1px solid rgba(56,189,248,0.25);
-    border-radius:20px; flex-direction:column;
-    box-shadow:0 24px 64px rgba(0,0,0,0.9);
+    display:none; position:absolute; top:0; right:0;
+    width:25vw; min-width:300px; height:100vh;
+    background:#080f1e; border-left:1px solid rgba(56,189,248,0.22);
+    border-radius:0;
+    flex-direction:column;
+    box-shadow:-8px 0 48px rgba(0,0,0,0.85);
     overflow:hidden;
 }}
-@keyframes slide {{ from{{opacity:0;transform:translateY(8px);}} to{{opacity:1;transform:translateY(0);}} }}
-#panel.open {{ display:flex; animation:slide 0.2s ease; }}
-.hdr {{ display:flex;align-items:center;gap:0.6rem;padding:0.75rem 1rem;
+@keyframes slideIn {{ from{{opacity:0;transform:translateX(20px);}} to{{opacity:1;transform:translateX(0);}} }}
+#panel.open {{ display:flex; animation:slideIn 0.25s cubic-bezier(.4,0,.2,1); }}
+
+/* Panel header */
+.hdr {{
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.8rem 1rem;
     background:linear-gradient(135deg,#0c1f3d,#080f1e);
-    border-bottom:1px solid rgba(56,189,248,0.12);flex-shrink:0; }}
-.hdr img {{ width:34px;height:34px;border-radius:10px; }}
-.hname {{ font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:1px; }}
-.hsub  {{ font-size:0.67rem;color:#38bdf8; }}
-#cls {{ margin-left:auto;background:none;border:none;color:#475569;font-size:1rem;
-    cursor:pointer;padding:0.2rem 0.4rem;border-radius:6px;transition:color 0.15s; }}
-#cls:hover {{ color:#94a3b8; }}
-#msgs {{ flex:1;overflow-y:auto;padding:0.75rem;
-    display:flex;flex-direction:column;gap:0.45rem;scroll-behavior:smooth; }}
+    border-bottom:1px solid rgba(56,189,248,0.12); flex-shrink:0;
+}}
+.hdr-icon {{
+    width:34px; height:34px; border-radius:10px; flex-shrink:0;
+    background:linear-gradient(145deg,#082040,#050f1f);
+    border:1px solid rgba(56,189,248,0.35);
+    display:flex; align-items:center; justify-content:center;
+}}
+.hdr-icon svg {{ width:22px; height:16px; }}
+.hdr-icon svg polyline {{
+    fill:none; stroke:#38bdf8; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+    filter:drop-shadow(0 0 3px rgba(56,189,248,0.8));
+}}
+.hname {{ font-size:0.9rem; font-weight:700; color:#f1f5f9; font-family:monospace; letter-spacing:2px; }}
+.hsub  {{ font-size:0.65rem; color:#38bdf8; opacity:0.8; }}
+#cls {{
+    margin-left:auto; background:none; border:none; color:#475569;
+    font-size:1.1rem; cursor:pointer; padding:0.25rem 0.45rem;
+    border-radius:6px; transition:color 0.15s, background 0.15s;
+}}
+#cls:hover {{ color:#94a3b8; background:rgba(255,255,255,0.06); }}
+
+/* Messages */
+#msgs {{
+    flex:1; overflow-y:auto; padding:0.75rem;
+    display:flex; flex-direction:column; gap:0.45rem; scroll-behavior:smooth;
+}}
 #msgs::-webkit-scrollbar {{ width:3px; }}
-#msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f;border-radius:2px; }}
-.msg {{ font-size:0.79rem;line-height:1.5;max-width:90%;word-break:break-word; }}
-.mu  {{ align-self:flex-end;background:linear-gradient(135deg,#1e3a5f,#152d4a);
-    color:#e2e8f0;padding:0.4rem 0.75rem;border-radius:14px 14px 2px 14px; }}
-.mb  {{ align-self:flex-start;background:#0f1c2e;color:#cbd5e1;
-    padding:0.5rem 0.7rem;border-radius:2px 14px 14px 14px;
-    border:1px solid rgba(56,189,248,0.1); }}
-.mg  {{ align-self:center;text-align:center;
+#msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f; border-radius:2px; }}
+.msg {{ font-size:0.79rem; line-height:1.5; max-width:92%; word-break:break-word; }}
+.mu  {{
+    align-self:flex-end;
+    background:linear-gradient(135deg,#1e3a5f,#152d4a);
+    color:#e2e8f0; padding:0.4rem 0.75rem;
+    border-radius:14px 14px 2px 14px;
+}}
+.mb  {{
+    align-self:flex-start; background:#0f1c2e; color:#cbd5e1;
+    padding:0.5rem 0.7rem; border-radius:2px 14px 14px 14px;
+    border:1px solid rgba(56,189,248,0.1);
+}}
+.mg  {{
+    align-self:center; text-align:center;
     background:linear-gradient(135deg,#0c1f3d,#080f1e);
-    border:1px solid rgba(56,189,248,0.12);border-radius:12px;
-    padding:0.6rem 0.8rem;color:#94a3b8;font-size:0.76rem;max-width:100%; }}
-.typing {{ display:flex;gap:4px;padding:0.4rem 0.7rem;align-self:flex-start; }}
-.typing span {{ width:5px;height:5px;background:#38bdf8;border-radius:50%;animation:bounce 1.2s infinite; }}
+    border:1px solid rgba(56,189,248,0.12); border-radius:12px;
+    padding:0.6rem 0.8rem; color:#94a3b8; font-size:0.76rem; max-width:100%;
+}}
+.typing {{ display:flex; gap:4px; padding:0.4rem 0.7rem; align-self:flex-start; }}
+.typing span {{
+    width:5px; height:5px; background:#38bdf8;
+    border-radius:50%; animation:bounce 1.2s infinite;
+}}
 .typing span:nth-child(2) {{ animation-delay:0.18s; }}
 .typing span:nth-child(3) {{ animation-delay:0.36s; }}
 @keyframes bounce {{ 0%,60%,100%{{transform:translateY(0);}} 30%{{transform:translateY(-6px);}} }}
-#chips {{ padding:0.45rem 0.75rem 0.2rem;display:flex;flex-wrap:wrap;gap:0.28rem;flex-shrink:0; }}
-.chip {{ background:#0c1f3d;color:#38bdf8;border:1px solid rgba(56,189,248,0.22);
-    border-radius:20px;font-size:0.69rem;padding:0.2rem 0.52rem;
-    cursor:pointer;transition:all 0.15s;white-space:nowrap; }}
-.chip:hover {{ background:#1e3a5f;border-color:#38bdf8;color:#7dd3fc; }}
-.irow {{ display:flex;gap:0.4rem;padding:0.55rem 0.75rem 0.65rem;
-    border-top:1px solid rgba(56,189,248,0.09);flex-shrink:0; }}
-#inp {{ flex:1;background:#0c1824;border:1px solid rgba(56,189,248,0.22);
-    border-radius:10px;color:#f1f5f9;font-size:0.79rem;
-    padding:0.4rem 0.7rem;outline:none;transition:border-color 0.15s; }}
-#inp:focus {{ border-color:#38bdf8; }}
+
+/* Chips */
+#chips {{ padding:0.45rem 0.75rem 0.2rem; display:flex; flex-wrap:wrap; gap:0.28rem; flex-shrink:0; }}
+.chip {{
+    background:#0c1f3d; color:#38bdf8;
+    border:1px solid rgba(56,189,248,0.22); border-radius:20px;
+    font-size:0.69rem; padding:0.2rem 0.52rem;
+    cursor:pointer; transition:all 0.15s; white-space:nowrap;
+}}
+.chip:hover {{ background:#1e3a5f; border-color:#38bdf8; color:#7dd3fc; }}
+
+/* Input row */
+.irow {{
+    display:flex; gap:0.4rem; padding:0.55rem 0.75rem 0.65rem;
+    border-top:1px solid rgba(56,189,248,0.09); flex-shrink:0;
+}}
+#inp {{
+    flex:1; background:#0c1824; border:1px solid rgba(56,189,248,0.22);
+    border-radius:10px; color:#f1f5f9; font-size:0.79rem;
+    padding:0.4rem 0.7rem; outline:none; transition:border-color 0.15s;
+}}
+#inp:focus {{ border-color:#38bdf8; box-shadow:0 0 0 2px rgba(56,189,248,0.12); }}
 #inp::placeholder {{ color:#1e3a5f; }}
-#snd {{ background:#0c1f3d;border:1px solid rgba(56,189,248,0.28);
-    border-radius:10px;color:#38bdf8;font-size:1.1rem;
-    padding:0 0.8rem;cursor:pointer;transition:all 0.15s;flex-shrink:0; }}
-#snd:hover {{ background:#38bdf8;color:#050f1f; }}
+#snd {{
+    background:#0c1f3d; border:1px solid rgba(56,189,248,0.28);
+    border-radius:10px; color:#38bdf8; font-size:1.1rem;
+    padding:0 0.8rem; cursor:pointer; transition:all 0.15s; flex-shrink:0;
+}}
+#snd:hover {{ background:#38bdf8; color:#050f1f; }}
 </style>
 </head>
 <body>
+
+<!-- Pulse ring (only visible when FAB is shown) -->
 <div id="ring"></div>
-<button id="fab" title="Ask Sage"><img src="{_SAGE_URI_WIDGET}" alt="Sage"/></button>
+
+<!-- FAB — inline SVG ECG + SAGE label -->
+<button id="fab" title="Ask Sage">
+  <svg class="ecg" viewBox="0 0 52 28">
+    <polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/>
+  </svg>
+  <span class="flabel">SAGE</span>
+</button>
+
+<!-- Chat panel — slides in from the right -->
 <div id="panel">
   <div class="hdr">
-    <img src="{_SAGE_URI_WIDGET}" alt="Sage"/>
-    <div><div class="hname">SAGE</div><div class="hsub">Sentiment Signal Assistant</div></div>
+    <div class="hdr-icon">
+      <svg viewBox="0 0 52 28">
+        <polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/>
+      </svg>
+    </div>
+    <div>
+      <div class="hname">SAGE</div>
+      <div class="hsub">Sentiment Signal Assistant</div>
+    </div>
     <button id="cls">&#x2715;</button>
   </div>
   <div id="msgs">
@@ -1119,62 +1233,99 @@ html,body {{ background:transparent; overflow:visible; width:80px; height:80px; 
     <button id="snd">&#x2191;</button>
   </div>
 </div>
+
 <script>
 (function() {{
-  var fab=document.getElementById('fab'), panel=document.getElementById('panel'),
-      cls=document.getElementById('cls'),  inp=document.getElementById('inp'),
-      snd=document.getElementById('snd'),  msgs=document.getElementById('msgs'),
-      chips=document.getElementById('chips');
-  var open=false, built=false;
-  var suggs=["What's the strongest signal today?","Which markets are bearish?",
-             "Explain the top BUY signal","Any high-confidence SELL signals?"];
+  var fab   = document.getElementById('fab'),
+      ring  = document.getElementById('ring'),
+      panel = document.getElementById('panel'),
+      cls   = document.getElementById('cls'),
+      inp   = document.getElementById('inp'),
+      snd   = document.getElementById('snd'),
+      msgs  = document.getElementById('msgs'),
+      chips = document.getElementById('chips');
 
+  var open = false, built = false;
+  var suggs = [
+    "What's the strongest signal today?",
+    "Which markets are bearish?",
+    "Explain the top BUY signal",
+    "Any high-confidence SELL signals?"
+  ];
+
+  // Resize the iframe and toggle FAB/panel visibility.
+  // NO transform manipulation — CSS handles the fixed position anchor.
   function setSize(o) {{
-    var fe=window.frameElement;
+    var fe = window.frameElement;
     if (!fe) return;
     if (o) {{
-      fe.style.width='380px'; fe.style.height='620px';
-      fe.style.transform='translateY(calc(-50% + 310px))';
+      // Full viewport: panel becomes a true sidebar
+      fe.style.width    = '25vw';
+      fe.style.minWidth = '300px';
+      fe.style.height   = '100vh';
+      fe.style.top      = '0';
+      fe.style.marginTop = '0';
     }} else {{
-      fe.style.width='80px'; fe.style.height='80px';
-      fe.style.transform='translateY(-50%)';
+      fe.style.width    = '80px';
+      fe.style.minWidth = '';
+      fe.style.height   = '80px';
+      fe.style.top      = '50vh';
+      fe.style.marginTop = '-40px';
     }}
   }}
 
-  function toggle() {{
-    open=!open; panel.classList.toggle('open',open); setSize(open);
-    if (open) {{ scroll2b(); inp.focus(); if (!built) {{ buildChips(); built=true; }} }}
+  // Add/remove sage-open class on the parent body to push Streamlit content left
+  function setBodyClass(o) {{
+    try {{
+      if (o) window.parent.document.body.classList.add('sage-open');
+      else   window.parent.document.body.classList.remove('sage-open');
+    }} catch(e) {{}}
   }}
-  function scroll2b() {{ msgs.scrollTop=msgs.scrollHeight; }}
+
+  function toggle() {{
+    open = !open;
+    panel.classList.toggle('open', open);
+    fab.style.opacity   = open ? '0' : '1';
+    fab.style.pointerEvents = open ? 'none' : 'auto';
+    ring.style.display  = open ? 'none' : 'block';
+    setSize(open);
+    setBodyClass(open);
+    if (open) {{ scroll2b(); inp.focus(); if (!built) {{ buildChips(); built = true; }} }}
+  }}
+
+  function scroll2b() {{ msgs.scrollTop = msgs.scrollHeight; }}
+
   function buildChips() {{
-    chips.innerHTML='';
+    chips.innerHTML = '';
     suggs.forEach(function(s) {{
-      var b=document.createElement('button');
-      b.className='chip'; b.textContent=s;
-      b.onclick=function(){{ sendMsg(s); }};
+      var b = document.createElement('button');
+      b.className = 'chip'; b.textContent = s;
+      b.onclick = function() {{ sendMsg(s); }};
       chips.appendChild(b);
     }});
   }}
+
   function sendMsg(text) {{
     if (!text.trim()) return;
-    var ub=document.createElement('div');
-    ub.className='msg mu'; ub.textContent=text;
+    var ub = document.createElement('div');
+    ub.className = 'msg mu'; ub.textContent = text;
     msgs.appendChild(ub); scroll2b();
-    inp.value=''; chips.innerHTML='';
-    var t=document.createElement('div');
-    t.className='typing';
-    t.innerHTML='<span></span><span></span><span></span>';
+    inp.value = ''; chips.innerHTML = '';
+    var t = document.createElement('div');
+    t.className = 'typing';
+    t.innerHTML = '<span></span><span></span><span></span>';
     msgs.appendChild(t); scroll2b();
     setTimeout(function() {{
-      var url=new URL(window.parent.location.href);
-      url.searchParams.set('sage_msg',encodeURIComponent(text));
-      window.parent.location.href=url.toString();
-    }},380);
+      var url = new URL(window.parent.location.href);
+      url.searchParams.set('sage_msg', encodeURIComponent(text));
+      window.parent.location.href = url.toString();
+    }}, 380);
   }}
-  fab.addEventListener('click',toggle);
-  cls.addEventListener('click',toggle);
-  snd.addEventListener('click',function(){{ sendMsg(inp.value); }});
-  inp.addEventListener('keydown',function(e){{ if(e.key==='Enter') sendMsg(inp.value); }});
+
+  fab.addEventListener('click', toggle);
+  cls.addEventListener('click', toggle);
+  snd.addEventListener('click', function() {{ sendMsg(inp.value); }});
+  inp.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') sendMsg(inp.value); }});
   scroll2b();
 }})();
 </script>
