@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
@@ -1019,7 +1019,8 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
 
 
 # -- Sage: sidebar chatbot using native Streamlit chat elements --
-# Pattern from: docs.streamlit.io/develop/tutorials/chat-and-llm-apps/build-conversational-apps
+# Pattern from docs.streamlit.io/develop/tutorials/chat-and-llm-apps/build-conversational-apps
+# st.chat_input must be at script level (not inside with-block) per Streamlit docs
 
 with st.sidebar:
     st.markdown(
@@ -1030,14 +1031,12 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Welcome hint
+    # Welcome hint + quick chips when no history
     if not st.session_state.sage_msgs:
         st.info(
             "👋 Ask me about any stock or market.\n\n"
             "Type a ticker like **NVDA** for a quick signal.",
-            icon=None,
         )
-        # Quick-start chips
         _chips = [
             "What's the strongest signal today?",
             "Which markets are bearish?",
@@ -1049,28 +1048,24 @@ with st.sidebar:
                 st.session_state.sage_pending = _chip
                 st.rerun()
 
-    # Display chat history — exactly as the Streamlit docs show
+    # Display full chat history
     for _sm in st.session_state.sage_msgs:
         with st.chat_message(_sm["role"]):
             st.markdown(_sm["content"])
 
-    # Show spinner if a reply is being generated (sage_pending was just set)
+    # If a reply was just generated (sage_pending processed at top of script),
+    # show a spinner placeholder while waiting
     if st.session_state.sage_pending:
         with st.chat_message("assistant"):
-            with st.spinner("Sage is thinking…"):
-                pass  # actual call happens at top of script on next rerun
+            st.markdown("⏳ *Thinking…*")
 
-    # Native chat input — Streamlit places this at the bottom of the sidebar
-    _sidebar_input = st.chat_input(
-        "Ask about a stock or market…", key="sage_sidebar_input"
-    )
-    if _sidebar_input:
-        # Show user message immediately
-        with st.chat_message("user"):
-            st.markdown(_sidebar_input)
-        # Set pending and rerun so the top-of-script HF call fires
-        st.session_state.sage_pending = _sidebar_input
-        st.rerun()
+# st.chat_input MUST be called at script level — Streamlit docs requirement
+# It renders pinned to the bottom of the sidebar automatically
+_sidebar_input = st.chat_input("Ask Sage about a stock or market…")
+if _sidebar_input:
+    # Just set pending — the top-of-script block appends both user+assistant msgs
+    st.session_state.sage_pending = _sidebar_input
+    st.rerun()
 
 
 # Tab pills row
