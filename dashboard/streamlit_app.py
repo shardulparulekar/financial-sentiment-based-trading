@@ -1024,11 +1024,39 @@ import streamlit.components.v1 as _comp_sage
 if 'sage_open' not in st.session_state:
     st.session_state.sage_open = False
 
-_fab_clicked = st.query_params.get('sage_toggle')
-if _fab_clicked:
-    st.session_state.sage_open = not st.session_state.sage_open
-    st.query_params.clear()
-    st.rerun()
+# Hidden checkbox — the postMessage listener below clicks it to trigger rerun
+# We hide it with CSS so it's invisible but still reactive
+st.markdown("""
+<style>
+div[data-testid='stCheckbox'].sage-toggle-cb { 
+    position:fixed; top:-9999px; opacity:0; pointer-events:none; width:1px; height:1px;
+}
+</style>
+<script>
+// Listen for postMessage from the SAGE FAB iframe
+(function() {
+  if (window._sageListenerAdded) return;
+  window._sageListenerAdded = true;
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.type !== 'sage_toggle') return;
+    // Find and click the hidden sage toggle checkbox to trigger Streamlit rerun
+    var cb = document.querySelector('div.sage-toggle-cb input[type=checkbox]');
+    if (cb) cb.click();
+  });
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# The checkbox value flip triggers a rerun; we use it to toggle sage_open
+_sage_toggle_cb = st.checkbox('sage_toggle', key='sage_toggle_cb', label_visibility='hidden')
+st.markdown('<script>document.querySelector("[data-testid=stCheckbox]").classList.add("sage-toggle-cb")</script>', unsafe_allow_html=True)
+
+if st.session_state.get('_sage_prev_cb') != _sage_toggle_cb:
+    st.session_state['_sage_prev_cb'] = _sage_toggle_cb
+    if 'sage_open' in st.session_state:  # skip the very first render
+        st.session_state.sage_open = not st.session_state.sage_open
+        st.rerun()
+st.session_state['_sage_prev_cb'] = _sage_toggle_cb
 
 if st.session_state.sage_open:
     st.markdown('<style>body { padding-right: 330px !important; }</style>', unsafe_allow_html=True)
@@ -1090,7 +1118,8 @@ html,body { background:transparent; overflow:visible; width:100%; height:100%; }
     fe.style.cssText = 'position:fixed!important;bottom:3.5rem!important;right:0!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99999!important;overflow:visible!important;';
   }
   document.getElementById('fab').addEventListener('click', function() {
-    window.parent.location.href = window.parent.location.pathname + '?sage_toggle=1';
+    // postMessage works across sandbox boundaries - no allow-top-navigation needed
+    window.parent.postMessage({type: 'sage_toggle'}, '*');
   });
 })();
 </script>
