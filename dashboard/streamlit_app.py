@@ -288,6 +288,23 @@ st.markdown("""
         padding-bottom: 0.4rem;
         border-bottom: 1px solid #1a2035;
     }
+
+    /* SAGE SIDEBAR */
+    section[data-testid="stSidebar"] {
+        background-color: #0b1220 !important;
+        border-left: 1px solid #1e293b !important;
+    }
+
+    section[data-testid="stSidebar"] .stChatMessage {
+        background: transparent !important;
+    }
+
+    section[data-testid="stSidebar"] .stChatInput textarea {
+        background-color: #111827 !important;
+        color: #f1f5f9 !important;
+        border: 1px solid #334155 !important;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -830,373 +847,221 @@ _nav_html = (
 _nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
 components.html(_nav_html, height=42, scrolling=False)
 
-# ── Global Sage assistant (fixed top-right, persists across all tabs) ─────────
-if "sage_pending" not in st.session_state:
-    st.session_state.sage_pending = None
-if "sage_msgs"    not in st.session_state:
-    st.session_state.sage_msgs    = []
 
-# ── Handle sage_msg query param at top level (works on any tab) ──────────────
-_sage_msg_qp = st.query_params.get("sage_msg")
-if _sage_msg_qp:
-    import urllib.parse as _up_qp
-    st.session_state.sage_pending = _up_qp.unquote(_sage_msg_qp)
-    st.query_params.clear()
-    st.rerun()
+# ══════════════════════════════════════════════════════════════════════════════
+# SAGE CHATBOT — FIXED VERSION
+# ══════════════════════════════════════════════════════════════════════════════
 
-if st.session_state.sage_pending:
-    _pending = st.session_state.sage_pending
-    st.session_state.sage_pending = None
+if "sage_msgs" not in st.session_state:
+    st.session_state.sage_msgs = []
 
-    _SK: dict = {}
-    for _m, _cfg in MARKET_CONFIG.items():
-        _sfx = _cfg.get("suffix", "")
-        for _t, _n in zip(_cfg["tickers"] + _cfg.get("us_adrs", []),
-                          _cfg["names"]   + _cfg.get("adr_names", [])):
-            _f = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
-            _SK[_f.upper()] = (_m, None, _t, _n)
-    for _ex, _ecfg in EU_EXCHANGES.items():
-        _sfx = _ecfg["suffix"]
-        for _t, _n in zip(_ecfg["tickers"] + _ecfg.get("us_exceptions", []),
-                          _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
-            _f = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
-            _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
+if "sage_input" not in st.session_state:
+    st.session_state.sage_input = ""
 
-    def _sk_find(msg):
-        found = []
-        for w in msg.upper().split():
-            w = w.strip(".,!?()[]'\"")
-            if w in _SK and w not in found:
-                found.append(w)
-        return found
 
-    _found = _sk_find(_pending)
-    _reply = ""
-    if _found:
-        _ft = _found[0]
-        _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
-        _top = load_top_signals(n=20)
-        _sig = None
-        if _top is not None and not _top.empty:
-            _match = _top[_top["ticker"].str.upper() == _ft.upper()]
-            if not _match.empty:
-                _r = _match.iloc[0]
-                _sig = {"predicted": int(_r["predicted"]), "confidence": float(_r["confidence"]),
-                        "sentiment": float(_r["sentiment"]), "updated_at": _r["updated_at"],
-                        "trade_date": _r["trade_date"]}
-        if not _sig and _mkt:
-            try:
-                from src.data_ingestion      import DataIngestion
-                from src.sentiment_model     import SentimentModel
-                from src.feature_engineering import FeatureEngineer
-                import pytz as _ptz
-                _arts = DataIngestion().fetch_news(_ft, market=_mkt, exchange=_exch)
-                _sc   = SentimentModel().score_articles(_arts) if _arts else []
-                _fe   = FeatureEngineer().build_features(_sc) if _sc else None
-                if _fe is not None and not _fe.empty:
-                    _sc2   = float(_fe.iloc[-1].get("mean_score", 0))
-                    _now2  = datetime.now(_ptz.utc)
-                    _sig   = {"predicted": 1 if _sc2 > 0 else -1,
-                              "confidence": min(abs(_sc2)*2+0.5,0.99),
-                              "sentiment": _sc2, "updated_at": _now2,
-                              "trade_date": _now2, "live": True}
-            except Exception:
-                pass
-        if _sig and _mkt:
-            import pytz as _ptz2
-            _now3  = datetime.now(_ptz2.utc)
-            _is_up = _sig["predicted"] == 1
-            _scol  = "#22c55e" if _is_up else "#ef4444"
-            _slbl  = "bullish" if _sig["sentiment"] > 0.05 else ("bearish" if _sig["sentiment"] < -0.05 else "neutral")
-            _secs  = (_now3 - _sig["updated_at"]).total_seconds()
-            _age   = (f"{int(_secs//60)}m ago" if _secs < 3600
-                      else f"{int(_secs//3600)}h {int((_secs%3600)//60)}m ago")
-            _flag  = (_exch or _mkt or "").split(" ")[0]
-            _live  = " · live" if _sig.get("live") else ""
-            _reply = (
-                f"<div style='border-top:2px solid {_scol};border-radius:8px;"
-                f"padding:0.55rem 0.65rem;background:rgba(255,255,255,0.03)'>"
-                f"<div style='font-size:0.78rem;color:#94a3b8'>{_flag} <b>{_dt}</b>"
-                f" <span style='color:#475569'>{_co}</span></div>"
-                f"<div style='font-size:1rem;font-weight:700;color:{_scol}'>"
-                f"{'&#9650;' if _is_up else '&#9660;'} {'BUY' if _is_up else 'SELL'}</div>"
-                f"<div style='font-size:0.72rem;color:#94a3b8;margin-top:0.1rem'>"
-                f"{_sig['confidence']:.0%} conf · {_slbl} ({_sig['sentiment']:+.3f})</div>"
-                f"<div style='font-size:0.65rem;color:#475569;margin-top:0.15rem'>"
-                f"⏱ {_age}{_live}</div>"
-                f"<a href='?sage_open={_ft}' style='display:inline-block;margin-top:0.35rem;"
-                f"background:#1e3a5f;color:#60a5fa;font-size:0.72rem;"
-                f"padding:0.2rem 0.55rem;border-radius:6px;text-decoration:none'>"
-                f"📊 Open full analysis →</a></div>"
-            )
-        elif _mkt:
-            _reply = f"Couldn't fetch a live signal for <b>{_dt}</b> right now."
-        else:
-            _reply = f"<b>{_ft}</b> isn't in our tracked list."
-    else:
+def generate_sage_response(user_message: str):
+    import os
+    import requests
+
+    try:
+        hf_token = ""
+
         try:
-            import requests as _rq, os as _os
-            # Read token — secrets must be [huggingface] / token = "hf_..."
-            try:    _hf = st.secrets["huggingface"]["token"]
-            except Exception: _hf = _os.getenv("HUGGINGFACE_TOKEN", "")
+            hf_token = st.secrets["huggingface"]["token"]
+        except Exception:
+            hf_token = os.getenv("HUGGINGFACE_TOKEN", "")
 
-            if not _hf:
-                _reply = "HuggingFace token not configured. Add [huggingface]\ntoken='hf_xxx' to Streamlit secrets."
-            else:
-                _top2  = load_top_signals(n=10)
-                _sent2 = load_market_sentiment()
-                _ctx   = []
-                if _top2 is not None and not _top2.empty:
-                    _ctx.append("Signals: " + ", ".join(
-                        f"{r['ticker']}: {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                        for _,r in _top2.head(5).iterrows()))
-                if _sent2:
-                    _ctx.append("Sentiment: " + " | ".join(
-                        f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                        for mk,d in _sent2.items()))
-                _system = ("You are Sage, a concise financial signal assistant. "
-                           "Answer in 2-3 sentences. Never give direct investment advice. "
-                           "Reply in plain text only, no HTML tags.\n\n"
-                           f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-                # Use HF chat completions endpoint (works with free tier as of 2025)
-                # Model: Qwen2.5-7B-Instruct — fast, free, reliable on HF router
-                _messages = [{"role": "system", "content": _system}]
-                for _hm in st.session_state.sage_msgs[-6:]:
-                    _messages.append({"role": _hm["role"], "content": _hm["content"]})
-                _messages.append({"role": "user", "content": _pending})
+        if not hf_token:
+            return (
+                "⚠️ HuggingFace token missing.
 
-                import concurrent.futures as _cf
-                def _call_hf():
-                    return _rq.post(
-                        "https://router.huggingface.co/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {_hf}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": "Qwen/Qwen3-8B",
-                            "messages": _messages,
-                            "max_tokens": 200,
-                            "temperature": 0.4,
-                            "stream": False,
-                        },
-                        timeout=60)
+"
+                "Add this to .streamlit/secrets.toml:
 
-                with st.spinner("Sage is thinking…"):
-                    with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                        _future = _ex.submit(_call_hf)
-                        _resp   = _future.result(timeout=65)
+"
+                "[huggingface]
+"
+                "token='hf_xxx'"
+            )
 
-                if _resp.status_code == 200:
-                    _data = _resp.json()
-                    _text = _data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    _reply = _text or "I couldn't generate a response."
-                elif _resp.status_code == 503:
-                    _reply = "⏳ Model is warming up. Please try again in ~20 seconds."
-                elif _resp.status_code == 403:
-                    _reply = "🔑 HuggingFace token lacks access. Check your token at huggingface.co/settings/tokens."
-                else:
-                    _reply = f"⚠️ Model error ({_resp.status_code}): {_resp.text[:200]}"
-        except Exception as _e:
-            _reply = f"Error: {_e}"
+        top_signals = load_top_signals(n=5)
+        market_sentiment = load_market_sentiment()
 
-    # Strip any HTML tags the model may have returned
-    import re as _re
-    _reply_clean = _re.sub(r'<[^>]+>', '', _reply).strip()
-    st.session_state.sage_msgs.append({"role":"user","content":_pending})
-    st.session_state.sage_msgs.append({"role":"assistant","content":_reply_clean})
+        context_lines = []
 
-# _sage_hist removed — sidebar now uses st.chat_message directly
+        if top_signals is not None and not top_signals.empty:
+            signal_summary = []
+
+            for _, row in top_signals.head(5).iterrows():
+                direction = "BUY" if int(row["predicted"]) == 1 else "SELL"
+                confidence = float(row["confidence"])
+
+                signal_summary.append(
+                    f"{row['ticker']}: {direction} ({confidence:.0%})"
+                )
+
+            context_lines.append(
+                "Top signals: " + ", ".join(signal_summary)
+            )
+
+        if market_sentiment:
+            sentiment_summary = []
+
+            for market_name, data in market_sentiment.items():
+                label = data.get("label", "neutral")
+                score = data.get("score", 0)
+
+                sentiment_summary.append(
+                    f"{market_name}: {label} ({score:+.2f})"
+                )
+
+            context_lines.append(
+                "Market sentiment: " + " | ".join(sentiment_summary)
+            )
+
+        system_prompt = f"""
+You are SAGE, a financial sentiment assistant.
+
+Rules:
+- Be concise.
+- Answer in plain English.
+- Never give direct investment advice.
+- Focus on sentiment, momentum, and market interpretation.
+- Keep responses under 120 words.
+
+Context:
+{chr(10).join(context_lines)}
+"""
+
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            }
+        ]
+
+        for msg in st.session_state.sage_msgs[-6:]:
+            messages.append(msg)
+
+        messages.append(
+            {
+                "role": "user",
+                "content": user_message,
+            }
+        )
+
+        response = requests.post(
+            "https://router.huggingface.co/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {hf_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "Qwen/Qwen3-8B",
+                "messages": messages,
+                "temperature": 0.4,
+                "max_tokens": 220,
+            },
+            timeout=60,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            return (
+                data
+                .get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "No response generated.")
+            )
+
+        if response.status_code == 503:
+            return "⏳ The AI model is warming up. Try again in 20 seconds."
+
+        if response.status_code == 401:
+            return "🔑 Invalid HuggingFace token."
+
+        return f"⚠️ API Error {response.status_code}"
+
+    except Exception as e:
+        return f"⚠️ Error: {str(e)}"
 
 
+with st.sidebar:
 
-# -- Sage: right-side panel using st.dialog (native Streamlit overlay, no JS tricks) --
-# st.dialog is fully supported in Streamlit 1.37+ and works on Streamlit Cloud.
-# The FAB button opens it; the dialog renders as a modal overlay on the right.
+    st.markdown(
+        """
+        <div style='padding-top:0.5rem;padding-bottom:0.8rem;'>
+            <div style='font-size:1.2rem;font-weight:700;color:#38bdf8;'>
+                ⚡ SAGE
+            </div>
+            <div style='font-size:0.78rem;color:#94a3b8;'>
+                Sentiment Signal Assistant
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-import streamlit.components.v1 as _comp_sage
+    st.divider()
 
-# ── SAGE: right sidebar chat (native Streamlit — reliable, persistent) ────────
-# Using st.sidebar which is already fixed-positioned, scrollable independently,
-# and does NOT close on rerun. This is the correct Streamlit pattern.
+    if not st.session_state.sage_msgs:
+        st.info(
+            "👋 Ask about any stock, ticker, or market sentiment."
+        )
 
-# Style sidebar to look like SAGE panel (right side)
-st.markdown("""
-<style>
-/* Move sidebar to RIGHT side and style as SAGE panel */
-[data-testid="stSidebar"] {
-    left: auto !important;
-    right: 0 !important;
-    background: #080f1e !important;
-    border-left: 1px solid rgba(56,189,248,0.22) !important;
-    border-right: none !important;
-    min-width: 320px !important;
-    max-width: 320px !important;
-}
-[data-testid="stSidebar"] > div:first-child {
-    background: #080f1e !important;
-    padding-top: 0.75rem !important;
-}
-/* Hide default sidebar nav toggle arrow on left — we have our own FAB */
-[data-testid="stSidebarCollapsedControl"] { display: none !important; }
-/* When sidebar open, push main content left */
-[data-testid="stSidebar"][aria-expanded="true"] ~ [data-testid="stMainBlockContainer"] {
-    margin-right: 320px !important;
-    transition: margin-right 0.3s ease !important;
-}
-/* Animated FAB — fixed bottom right, always visible */
-.sage-fab-wrapper {
-    position: fixed !important;
-    bottom: 4.5rem !important;
-    right: 0.5rem !important;
-    width: 90px !important;
-    height: 90px !important;
-    z-index: 99999 !important;
-    cursor: pointer !important;
-}
-/* Style chat input inside sidebar */
-[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
-    background: #0c1824 !important;
-    border: 1px solid rgba(56,189,248,0.22) !important;
-    color: #f1f5f9 !important;
-}
-/* No avatars on chat messages */
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"] {
-    display: none !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatMessage"] {
-    padding: 0.2rem 0 !important;
-    background: transparent !important;
-}
-</style>
-""", unsafe_allow_html=True)
+        example_prompts = [
+            "What are today's strongest signals?",
+            "Why is NVDA bullish?",
+            "Which markets look weak?",
+            "Summarize current global sentiment",
+        ]
 
-# Track open state
-if 'sage_open' not in st.session_state:
-    st.session_state.sage_open = False
-
-# Animated FAB button — using st.components for the visual,
-# with a real Streamlit button underneath for the click
-import streamlit.components.v1 as _comp_sage
-
-_fab_html = """<!DOCTYPE html><html><head><style>
-*{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:transparent;overflow:visible;width:100%;height:100%;}
-#fab{
-  position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:18px;
-  border:1.5px solid rgba(56,189,248,0.55);
-  background:linear-gradient(145deg,#082040,#050f1f);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  box-shadow:0 4px 24px rgba(56,189,248,0.35);
-  pointer-events:none;
-}
-#fab svg{width:52px;height:28px;overflow:visible;}
-#fab polyline{fill:none;stroke:#38bdf8;stroke-width:2;stroke-linecap:round;
-  stroke-dasharray:120;stroke-dashoffset:120;
-  animation:draw 2.4s ease-in-out infinite;
-  filter:drop-shadow(0 0 3px rgba(56,189,248,.8));}
-@keyframes draw{0%{stroke-dashoffset:120;opacity:.3}40%{stroke-dashoffset:0;opacity:1}
-  70%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:-120;opacity:.3}}
-.lbl{font-family:monospace;font-size:9px;font-weight:700;letter-spacing:3px;color:#38bdf8;
-  text-shadow:0 0 8px rgba(56,189,248,.7);}
-#ring{position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:20px;
-  border:2px solid rgba(56,189,248,.4);animation:pulse 3s ease-out infinite;pointer-events:none;}
-@keyframes pulse{0%{opacity:.7;transform:scale(1)}70%{opacity:0;transform:scale(1.28)}100%{opacity:0;transform:scale(1.28)}}
-</style></head><body>
-<div id="ring"></div>
-<div id="fab">
-  <svg viewBox="0 0 52 28"><polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/></svg>
-  <span class="lbl">SAGE</span>
-</div>
-<script>
-(function(){
-  var fe=window.frameElement;
-  if(fe){
-    fe.style.cssText='position:fixed!important;bottom:4.5rem!important;right:0.5rem!important;width:90px!important;height:90px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';
-  }
-})();
-</script>
-</body></html>"""
-
-_comp_sage.html(_fab_html, height=90, scrolling=False)
-
-# Real button hidden behind FAB — CSS positions it over the icon
-st.markdown("""
-<style>
-/* Pull the FAB toggle button out of page flow onto the fixed FAB position */
-div[data-testid="stMainBlockContainer"]
-  button[title="Toggle SAGE"] {
-    position: fixed !important;
-    bottom: 4.5rem !important;
-    right: 0.5rem !important;
-    width: 90px !important;
-    height: 90px !important;
-    opacity: 0 !important;
-    z-index: 99998 !important;
-    cursor: pointer !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-if st.button("S", key="sage_toggle_btn", help="Toggle SAGE"):
-    st.session_state.sage_open = not st.session_state.sage_open
-    st.rerun()
-
-# ── Sidebar chat panel ────────────────────────────────────────────────────────
-if st.session_state.sage_open:
-    with st.sidebar:
-        # Header
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            st.markdown(
-                "<p style='font-family:monospace;font-weight:700;font-size:1rem;"
-                "color:#f1f5f9;letter-spacing:2px;margin:0;'>⚡ SAGE</p>"
-                "<p style='font-size:0.65rem;color:#38bdf8;margin:0 0 0.5rem;'>"
-                "Sentiment Signal Assistant</p>",
-                unsafe_allow_html=True)
-        with col2:
-            if st.button("✕", key="sage_close_btn"):
-                st.session_state.sage_open = False
+        for idx, prompt in enumerate(example_prompts):
+            if st.button(prompt, key=f"sage_prompt_{idx}"):
+                st.session_state.sage_input = prompt
                 st.rerun()
 
-        st.divider()
+    for message in st.session_state.sage_msgs:
 
-        # Welcome + chips
-        if not st.session_state.sage_msgs:
-            st.info("👋 Ask me about any stock or market.\nType a ticker like **NVDA** for a quick signal.")
-            for _ci, _chip in enumerate([
-                "What's the strongest signal today?",
-                "Which markets are bearish?",
-                "Explain the top BUY signal",
-                "Any high-confidence SELL signals?",
-            ]):
-                if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
-                    st.session_state.sage_pending = _chip
-                    st.rerun()
+        if message["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(message["content"])
 
-        # Chat history — custom styled bubbles, no avatars
-        for _sm in st.session_state.sage_msgs:
-            _bg = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
-            _r  = "12px 12px 2px 12px" if _sm["role"] == "user" else "2px 12px 12px 12px"
-            _fl = "flex-end" if _sm["role"] == "user" else "flex-start"
-            st.markdown(
-                f"<div style='display:flex;justify-content:{_fl};margin:3px 0;'>"
-                f"<div style='background:{_bg};border-radius:{_r};"
-                f"padding:0.45rem 0.7rem;max-width:90%;font-size:0.81rem;"
-                f"color:#e2e8f0;line-height:1.5;word-break:break-word;'>"
-                f"{_sm['content']}</div></div>",
-                unsafe_allow_html=True)
+        else:
+            with st.chat_message("assistant"):
+                st.markdown(message["content"])
 
-        if st.session_state.get("sage_pending"):
-            st.markdown("<p style='color:#94a3b8;font-size:0.8rem;'>⏳ Thinking…</p>",
-                       unsafe_allow_html=True)
+    user_prompt = st.chat_input("Ask SAGE about markets...")
 
-        # Native chat input — works reliably, no hacks needed
-        _user_input = st.chat_input("Ask about a stock or market…", key="sage_chat_input")
-        if _user_input:
-            st.session_state.sage_pending = _user_input
-            st.rerun()
+    if st.session_state.sage_input:
+        user_prompt = st.session_state.sage_input
+        st.session_state.sage_input = ""
+
+    if user_prompt:
+
+        st.session_state.sage_msgs.append(
+            {
+                "role": "user",
+                "content": user_prompt,
+            }
+        )
+
+        with st.sidebar:
+            with st.chat_message("assistant"):
+                with st.spinner("SAGE is thinking..."):
+                    assistant_reply = generate_sage_response(user_prompt)
+                    st.markdown(assistant_reply)
+
+        st.session_state.sage_msgs.append(
+            {
+                "role": "assistant",
+                "content": assistant_reply,
+            }
+        )
+
+        st.rerun()
+
 
 
 # Tab pills row
