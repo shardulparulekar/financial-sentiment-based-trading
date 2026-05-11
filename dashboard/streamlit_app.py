@@ -968,13 +968,13 @@ if st.session_state.sage_pending:
                 import concurrent.futures as _cf
                 def _call_hf():
                     return _rq.post(
-                        "https://router.huggingface.co/hf-inference/v1/chat/completions",
+                        "https://router.huggingface.co/v1/chat/completions",
                         headers={
                             "Authorization": f"Bearer {_hf}",
                             "Content-Type": "application/json",
                         },
                         json={
-                            "model": "Qwen/Qwen2.5-7B-Instruct",
+                            "model": "Qwen/Qwen3-8B",
                             "messages": _messages,
                             "max_tokens": 200,
                             "temperature": 0.4,
@@ -1034,10 +1034,17 @@ div[data-testid="stDialog"] [data-testid="stDialogContent"] {
     height: calc(100vh - 3rem) !important;
     overflow-y: auto !important;
 }
-/* Invisible real Streamlit button that the FAB iframe triggers */
-.sage-real-btn { position:fixed !important; bottom:5rem !important; right:0.5rem !important;
-    width:100px !important; height:100px !important; opacity:0 !important; z-index:99998 !important; }
-.sage-real-btn button { width:100px !important; height:100px !important; font-size:0 !important; }
+/* Invisible Streamlit button — fixed bottom-right, layered over the FAB icon */
+.sage-real-btn { position:fixed !important; bottom:4.8rem !important; right:0.3rem !important;
+    width:100px !important; height:100px !important; opacity:0 !important;
+    z-index:99999 !important; pointer-events:auto !important; }
+.sage-real-btn button { width:100px !important; height:100px !important;
+    cursor:pointer !important; font-size:0 !important; }
+/* Push main content left when dialog is open */
+body.sage-dialog-open .main .block-container {
+    max-width: calc(100% - 370px) !important;
+    transition: max-width 0.28s ease !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1074,7 +1081,7 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
 <script>
 (function(){
   var fe=window.frameElement;
-  if(fe){fe.style.cssText='position:fixed!important;bottom:5rem!important;right:0!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';}
+  if(fe){fe.style.cssText='position:fixed!important;bottom:4.8rem!important;right:0.3rem!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';}
 })();
 </script>
 </body></html>"""
@@ -1135,7 +1142,10 @@ def _sage_dialog():
         st.rerun()
 
 if st.session_state.sage_open:
+    st.markdown("<script>document.body.classList.add('sage-dialog-open')</script>", unsafe_allow_html=True)
     _sage_dialog()
+else:
+    st.markdown("<script>document.body.classList.remove('sage-dialog-open')</script>", unsafe_allow_html=True)
 
 
 # Tab pills row
