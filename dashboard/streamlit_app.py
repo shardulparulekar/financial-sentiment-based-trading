@@ -958,26 +958,28 @@ if st.session_state.sage_pending:
                            "Answer in 2-3 sentences. Never give direct investment advice. "
                            "Reply in plain text only, no HTML tags.\n\n"
                            f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-                # Build Phi-3-mini prompt — <|user|>/<|assistant|> format
-                _hist_turns = st.session_state.sage_msgs[-6:]
-                _prompt = f"<|system|>\n{_system}<|end|>\n"
-                for _hm in _hist_turns:
-                    _hr = "user" if _hm["role"] == "user" else "assistant"
-                    _prompt += f"<|{_hr}|>\n{_hm['content']}<|end|>\n"
-                _prompt += f"<|user|>\n{_pending}<|end|>\n<|assistant|>\n"
+                # Use HF chat completions endpoint (works with free tier as of 2025)
+                # Model: Qwen2.5-7B-Instruct — fast, free, reliable on HF router
+                _messages = [{"role": "system", "content": _system}]
+                for _hm in st.session_state.sage_msgs[-6:]:
+                    _messages.append({"role": _hm["role"], "content": _hm["content"]})
+                _messages.append({"role": "user", "content": _pending})
 
-                # Run the HF call in a thread so Streamlit's WebSocket
-                # keepalive pings are answered and the connection stays alive.
                 import concurrent.futures as _cf
                 def _call_hf():
                     return _rq.post(
-                        "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct",
-                        headers={"Authorization": f"Bearer {_hf}"},
-                        json={"inputs": _prompt, "parameters": {
-                            "max_new_tokens": 200,
+                        "https://router.huggingface.co/hf-inference/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {_hf}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": "Qwen/Qwen2.5-7B-Instruct",
+                            "messages": _messages,
+                            "max_tokens": 200,
                             "temperature": 0.4,
-                            "return_full_text": False,
-                            "stop": ["<|end|>", "<|user|>", "<|system|>"]}},
+                            "stream": False,
+                        },
                         timeout=60)
 
                 with st.spinner("Sage is thinking…"):
@@ -987,19 +989,12 @@ if st.session_state.sage_pending:
 
                 if _resp.status_code == 200:
                     _data = _resp.json()
-                    _text = (_data[0].get("generated_text", "") if isinstance(_data, list) and _data else "").strip()
-                    for _s2 in ["<|end|>", "<|user|>", "<|system|>"]:
-                        if _s2 in _text:
-                            _text = _text[:_text.index(_s2)].strip()
+                    _text = _data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                     _reply = _text or "I couldn't generate a response."
                 elif _resp.status_code == 503:
-                    try:
-                        _wait = _resp.json().get("estimated_time", 20)
-                        _reply = f"⏳ Model is warming up (~{int(_wait)}s). Please send your message again in a moment."
-                    except Exception:
-                        _reply = "⏳ Model is warming up. Please try again in ~20 seconds."
+                    _reply = "⏳ Model is warming up. Please try again in ~20 seconds."
                 elif _resp.status_code == 403:
-                    _reply = "🔑 HuggingFace token lacks access. Check token permissions at huggingface.co/settings/tokens."
+                    _reply = "🔑 HuggingFace token lacks access. Check your token at huggingface.co/settings/tokens."
                 else:
                     _reply = f"⚠️ Model error ({_resp.status_code}): {_resp.text[:200]}"
         except Exception as _e:
@@ -1019,75 +1014,79 @@ if st.session_state.sage_pending:
 # st.dialog is fully supported in Streamlit 1.37+ and works on Streamlit Cloud.
 # The FAB button opens it; the dialog renders as a modal overlay on the right.
 
-# Style: FAB fixed bottom-right, dialog styled as right panel
+import streamlit.components.v1 as _comp_sage
+
 st.markdown("""
 <style>
-/* FAB button — fixed bottom-right above Manage app */
-div[data-testid="stButton"].sage-fab > button {
-    position: fixed !important;
-    bottom: 4.5rem !important;
-    right: 1.5rem !important;
-    width: 64px !important;
-    height: 64px !important;
-    border-radius: 16px !important;
-    background: linear-gradient(145deg,#082040,#050f1f) !important;
-    border: 1.5px solid rgba(56,189,248,0.55) !important;
-    color: #38bdf8 !important;
-    font-size: 1.4rem !important;
-    box-shadow: 0 4px 24px rgba(56,189,248,0.35) !important;
-    z-index: 99999 !important;
-    padding: 0 !important;
-    line-height: 1 !important;
-}
-div[data-testid="stButton"].sage-fab > button:hover {
-    transform: scale(1.08) !important;
-    box-shadow: 0 6px 32px rgba(56,189,248,0.6) !important;
-    border-color: #38bdf8 !important;
-}
-/* Style the dialog to look like a right-side panel */
+/* Dialog styled as right-side panel */
 div[data-testid="stDialog"] > div > div {
     position: fixed !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    left: auto !important;
-    width: 360px !important;
-    max-width: 360px !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
+    top: 0 !important; right: 0 !important; bottom: 0 !important; left: auto !important;
+    width: 360px !important; max-width: 360px !important;
+    height: 100vh !important; max-height: 100vh !important;
     border-radius: 0 !important;
     border-left: 1px solid rgba(56,189,248,0.25) !important;
     background: #080f1e !important;
-    margin: 0 !important;
-    transform: none !important;
+    margin: 0 !important; transform: none !important;
 }
 div[data-testid="stDialog"] [data-testid="stDialogContent"] {
     padding: 0.75rem 1rem !important;
     height: calc(100vh - 3rem) !important;
     overflow-y: auto !important;
-    display: flex !important;
-    flex-direction: column !important;
 }
-/* Hide dialog backdrop so it doesn't block the page */
-div[data-testid="stDialog"]::before {
-    background: rgba(0,0,0,0.3) !important;
-}
-/* Chat messages: no avatars, clean look */
-div[data-testid="stChatMessage"] [data-testid="chatAvatarIcon-user"],
-div[data-testid="stChatMessage"] [data-testid="chatAvatarIcon-assistant"] {
-    display: none !important;
-}
-div[data-testid="stChatMessage"] {
-    padding: 0.4rem 0 !important;
-}
+/* Invisible real Streamlit button that the FAB iframe triggers */
+.sage-real-btn { position:fixed !important; bottom:5.5rem !important; right:1rem !important;
+    width:80px !important; height:80px !important; opacity:0 !important; z-index:99998 !important; }
+.sage-real-btn button { width:80px !important; height:80px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# The FAB button
-st.markdown('<div data-testid="stButton" class="sage-fab">', unsafe_allow_html=True)
-if st.button("⚡", key="sage_fab_open", help="Ask Sage"):
-    st.session_state.sage_open = True
-st.markdown('</div>', unsafe_allow_html=True)
+# Animated SAGE FAB — iframe for visuals only, sits above the real invisible button
+_fab_html = """<!DOCTYPE html><html><head><style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:transparent;overflow:visible;width:100%;height:100%;}
+#fab{
+  position:fixed;bottom:14px;right:14px;width:72px;height:72px;border-radius:18px;
+  border:1.5px solid rgba(56,189,248,0.55);
+  background:linear-gradient(145deg,#082040,#050f1f);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  box-shadow:0 4px 24px rgba(56,189,248,0.35);transition:transform .2s,box-shadow .2s;
+  pointer-events:none;  /* clicks pass through to the real button underneath */
+}
+#fab svg{width:52px;height:28px;overflow:visible;}
+#fab polyline{fill:none;stroke:#38bdf8;stroke-width:2;stroke-linecap:round;
+  stroke-dasharray:120;stroke-dashoffset:120;
+  animation:draw 2.4s ease-in-out infinite;
+  filter:drop-shadow(0 0 3px rgba(56,189,248,.8));}
+@keyframes draw{0%{stroke-dashoffset:120;opacity:.3}40%{stroke-dashoffset:0;opacity:1}
+  70%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:-120;opacity:.3}}
+.lbl{font-family:monospace;font-size:9px;font-weight:700;letter-spacing:3px;color:#38bdf8;
+  text-shadow:0 0 8px rgba(56,189,248,.7);}
+#ring{position:fixed;bottom:14px;right:14px;width:72px;height:72px;border-radius:20px;
+  border:2px solid rgba(56,189,248,.4);animation:pulse 3s ease-out infinite;pointer-events:none;}
+@keyframes pulse{0%{opacity:.7;transform:scale(1)}70%{opacity:0;transform:scale(1.28)}100%{opacity:0;transform:scale(1.28)}}
+</style></head><body>
+<div id="ring"></div>
+<div id="fab">
+  <svg viewBox="0 0 52 28"><polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/></svg>
+  <span class="lbl">SAGE</span>
+</div>
+<script>
+(function(){
+  var fe=window.frameElement;
+  if(fe){fe.style.cssText='position:fixed!important;bottom:5rem!important;right:0!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';}
+})();
+</script>
+</body></html>"""
+
+_comp_sage.html(_fab_html, height=100, scrolling=False)
+
+# Real invisible Streamlit button layered exactly over the FAB visual
+with st.container():
+    st.markdown('<div class="sage-real-btn">', unsafe_allow_html=True)
+    if st.button("⚡", key="sage_fab_open", label_visibility="collapsed", help="Open Sage"):
+        st.session_state.sage_open = True
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if 'sage_open' not in st.session_state:
     st.session_state.sage_open = False
