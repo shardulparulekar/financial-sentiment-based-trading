@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
@@ -958,27 +958,26 @@ if st.session_state.sage_pending:
                            "Answer in 2-3 sentences. Never give direct investment advice. "
                            "Reply in plain text only, no HTML tags.\n\n"
                            f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
-                # Build Mistral-7B-Instruct-v0.2 prompt — [INST]...[/INST] format
+                # Build Phi-3-mini prompt — <|user|>/<|assistant|> format
                 _hist_turns = st.session_state.sage_msgs[-6:]
-                _prompt = f"<s>[INST] {_system}\n\n{_pending} [/INST] "
+                _prompt = f"<|system|>\n{_system}<|end|>\n"
                 for _hm in _hist_turns:
-                    if _hm["role"] == "assistant":
-                        _prompt += f"{_hm['content']} </s>"
-                    else:
-                        _prompt += f"[INST] {_hm['content']} [/INST] "
+                    _hr = "user" if _hm["role"] == "user" else "assistant"
+                    _prompt += f"<|{_hr}|>\n{_hm['content']}<|end|>\n"
+                _prompt += f"<|user|>\n{_pending}<|end|>\n<|assistant|>\n"
 
                 # Run the HF call in a thread so Streamlit's WebSocket
                 # keepalive pings are answered and the connection stays alive.
                 import concurrent.futures as _cf
                 def _call_hf():
                     return _rq.post(
-                        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+                        "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct",
                         headers={"Authorization": f"Bearer {_hf}"},
                         json={"inputs": _prompt, "parameters": {
                             "max_new_tokens": 200,
                             "temperature": 0.4,
                             "return_full_text": False,
-                            "stop": ["[INST]", "</s>", "\n\n"]}},
+                            "stop": ["<|end|>", "<|user|>", "<|system|>"]}},
                         timeout=60)
 
                 with st.spinner("Sage is thinking…"):
@@ -989,7 +988,7 @@ if st.session_state.sage_pending:
                 if _resp.status_code == 200:
                     _data = _resp.json()
                     _text = (_data[0].get("generated_text", "") if isinstance(_data, list) and _data else "").strip()
-                    for _s2 in ["[INST]", "</s>", "<s>"]:
+                    for _s2 in ["<|end|>", "<|user|>", "<|system|>"]:
                         if _s2 in _text:
                             _text = _text[:_text.index(_s2)].strip()
                     _reply = _text or "I couldn't generate a response."
@@ -1016,25 +1015,88 @@ if st.session_state.sage_pending:
 
 
 
-# -- Sage: sidebar chatbot using native Streamlit chat elements --
-# Pattern from docs.streamlit.io/develop/tutorials/chat-and-llm-apps/build-conversational-apps
-# st.chat_input must be at script level (not inside with-block) per Streamlit docs
+# -- Sage: right-side panel using st.dialog (native Streamlit overlay, no JS tricks) --
+# st.dialog is fully supported in Streamlit 1.37+ and works on Streamlit Cloud.
+# The FAB button opens it; the dialog renders as a modal overlay on the right.
 
-with st.sidebar:
-    st.markdown(
-        "<div style='font-family:monospace;font-weight:700;font-size:1.1rem;"
-        "color:#f1f5f9;letter-spacing:2px;padding:0.5rem 0 0.1rem;'>⚡ SAGE</div>"
-        "<div style='font-size:0.7rem;color:#38bdf8;margin-bottom:0.75rem;'>"
-        "Sentiment Signal Assistant</div>",
-        unsafe_allow_html=True,
-    )
+# Style: FAB fixed bottom-right, dialog styled as right panel
+st.markdown("""
+<style>
+/* FAB button — fixed bottom-right above Manage app */
+div[data-testid="stButton"].sage-fab > button {
+    position: fixed !important;
+    bottom: 4.5rem !important;
+    right: 1.5rem !important;
+    width: 64px !important;
+    height: 64px !important;
+    border-radius: 16px !important;
+    background: linear-gradient(145deg,#082040,#050f1f) !important;
+    border: 1.5px solid rgba(56,189,248,0.55) !important;
+    color: #38bdf8 !important;
+    font-size: 1.4rem !important;
+    box-shadow: 0 4px 24px rgba(56,189,248,0.35) !important;
+    z-index: 99999 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+}
+div[data-testid="stButton"].sage-fab > button:hover {
+    transform: scale(1.08) !important;
+    box-shadow: 0 6px 32px rgba(56,189,248,0.6) !important;
+    border-color: #38bdf8 !important;
+}
+/* Style the dialog to look like a right-side panel */
+div[data-testid="stDialog"] > div > div {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: auto !important;
+    width: 360px !important;
+    max-width: 360px !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border-left: 1px solid rgba(56,189,248,0.25) !important;
+    background: #080f1e !important;
+    margin: 0 !important;
+    transform: none !important;
+}
+div[data-testid="stDialog"] [data-testid="stDialogContent"] {
+    padding: 0.75rem 1rem !important;
+    height: calc(100vh - 3rem) !important;
+    overflow-y: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+/* Hide dialog backdrop so it doesn't block the page */
+div[data-testid="stDialog"]::before {
+    background: rgba(0,0,0,0.3) !important;
+}
+/* Chat messages: no avatars, clean look */
+div[data-testid="stChatMessage"] [data-testid="chatAvatarIcon-user"],
+div[data-testid="stChatMessage"] [data-testid="chatAvatarIcon-assistant"] {
+    display: none !important;
+}
+div[data-testid="stChatMessage"] {
+    padding: 0.4rem 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
-    # Welcome hint + quick chips when no history
+# The FAB button
+st.markdown('<div data-testid="stButton" class="sage-fab">', unsafe_allow_html=True)
+if st.button("⚡", key="sage_fab_open", help="Ask Sage"):
+    st.session_state.sage_open = True
+st.markdown('</div>', unsafe_allow_html=True)
+
+if 'sage_open' not in st.session_state:
+    st.session_state.sage_open = False
+
+@st.dialog("SAGE — Sentiment Signal Assistant", width="small")
+def _sage_dialog():
+    # Welcome + chips when no history
     if not st.session_state.sage_msgs:
-        st.info(
-            "👋 Ask me about any stock or market.\n\n"
-            "Type a ticker like **NVDA** for a quick signal.",
-        )
+        st.caption("👋 Ask me about any stock or market. Type a ticker like **NVDA** for a quick signal.")
         _chips = [
             "What's the strongest signal today?",
             "Which markets are bearish?",
@@ -1044,26 +1106,37 @@ with st.sidebar:
         for _ci, _chip in enumerate(_chips):
             if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
                 st.session_state.sage_pending = _chip
+                st.session_state.sage_open = False
                 st.rerun()
 
-    # Display full chat history
+    # Chat history — plain messages, no avatars
     for _sm in st.session_state.sage_msgs:
-        with st.chat_message(_sm["role"]):
-            st.markdown(_sm["content"])
+        _align = "right" if _sm["role"] == "user" else "left"
+        _bg    = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
+        _border = "14px 14px 2px 14px" if _sm["role"] == "user" else "2px 14px 14px 14px"
+        st.markdown(
+            f"<div style='display:flex;justify-content:{'flex-end' if _sm['role']=='user' else 'flex-start'};margin:2px 0;'>"
+            f"<div style='background:{_bg};border-radius:{_border};padding:0.45rem 0.75rem;"
+            f"max-width:88%;font-size:0.82rem;color:#e2e8f0;line-height:1.5;'>"
+            f"{_sm['content']}</div></div>",
+            unsafe_allow_html=True,
+        )
 
-    # If a reply was just generated (sage_pending processed at top of script),
-    # show a spinner placeholder while waiting
-    if st.session_state.sage_pending:
-        with st.chat_message("assistant"):
-            st.markdown("⏳ *Thinking…*")
+    if st.session_state.get("sage_pending"):
+        st.markdown(
+            "<div style='color:#94a3b8;font-size:0.8rem;padding:0.3rem 0;'>⏳ Thinking…</div>",
+            unsafe_allow_html=True,
+        )
 
-# st.chat_input MUST be called at script level — Streamlit docs requirement
-# It renders pinned to the bottom of the sidebar automatically
-_sidebar_input = st.chat_input("Ask Sage about a stock or market…")
-if _sidebar_input:
-    # Just set pending — the top-of-script block appends both user+assistant msgs
-    st.session_state.sage_pending = _sidebar_input
-    st.rerun()
+    # Chat input
+    _dialog_input = st.chat_input("Ask about a stock or market…", key="sage_dialog_input")
+    if _dialog_input:
+        st.session_state.sage_pending = _dialog_input
+        st.session_state.sage_open = False
+        st.rerun()
+
+if st.session_state.sage_open:
+    _sage_dialog()
 
 
 # Tab pills row
