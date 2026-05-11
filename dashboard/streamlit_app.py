@@ -1016,39 +1016,71 @@ if st.session_state.sage_pending:
 
 import streamlit.components.v1 as _comp_sage
 
+# ── SAGE chatbot: animated FAB + st.dialog panel ─────────────────────────────
+import streamlit.components.v1 as _comp_sage
+
+if 'sage_open' not in st.session_state:
+    st.session_state.sage_open = False
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Dialog styled as right-side panel */
+/* 1. Hide the real ⚡ button from page flow — it only exists as fixed overlay */
+div[data-testid="stMainBlockContainer"] > div > div[data-testid="stVerticalBlock"]
+  > div.element-container:has(button[kind="secondary"][title="Open Sage"]) {
+    position: fixed !important;
+    bottom: 4.8rem !important;
+    right: 0.3rem !important;
+    width: 100px !important;
+    height: 100px !important;
+    opacity: 0 !important;
+    z-index: 99999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+div[data-testid="stMainBlockContainer"] > div > div[data-testid="stVerticalBlock"]
+  > div.element-container:has(button[kind="secondary"][title="Open Sage"]) button {
+    width: 100px !important;
+    height: 100px !important;
+}
+
+/* 2. Dialog as right-side panel — lifted above Manage app bar */
 div[data-testid="stDialog"] > div > div {
     position: fixed !important;
-    top: 0 !important; right: 0 !important; bottom: 0 !important; left: auto !important;
-    width: 360px !important; max-width: 360px !important;
-    height: 100vh !important; max-height: 100vh !important;
-    border-radius: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 3rem !important;
+    left: auto !important;
+    width: 360px !important;
+    max-width: 360px !important;
+    height: calc(100vh - 3rem) !important;
+    max-height: calc(100vh - 3rem) !important;
+    border-radius: 0 0 0 12px !important;
     border-left: 1px solid rgba(56,189,248,0.25) !important;
+    border-bottom: 1px solid rgba(56,189,248,0.15) !important;
     background: #080f1e !important;
-    margin: 0 !important; transform: none !important;
+    margin: 0 !important;
+    transform: none !important;
+    box-shadow: -8px 0 48px rgba(0,0,0,0.8) !important;
 }
 div[data-testid="stDialog"] [data-testid="stDialogContent"] {
-    padding: 0.75rem 1rem !important;
-    height: calc(100vh - 3rem) !important;
+    padding: 0.75rem 1rem 0.5rem !important;
+    height: 100% !important;
     overflow-y: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
-/* Invisible Streamlit button — fixed bottom-right, layered over the FAB icon */
-.sage-real-btn { position:fixed !important; bottom:4.8rem !important; right:0.3rem !important;
-    width:100px !important; height:100px !important; opacity:0 !important;
-    z-index:99999 !important; pointer-events:auto !important; }
-.sage-real-btn button { width:100px !important; height:100px !important;
-    cursor:pointer !important; font-size:0 !important; }
-/* Push main content left when dialog is open */
-body.sage-dialog-open .main .block-container {
-    max-width: calc(100% - 370px) !important;
-    transition: max-width 0.28s ease !important;
+
+/* 3. Push main content left when dialog open — use margin on the main block */
+div[data-testid="stDialog"] ~ div[data-testid="stMainBlockContainer"],
+div[data-testid="stMainBlockContainer"]:has(~ div[data-testid="stDialog"]) {
+    padding-right: 370px !important;
+    transition: padding-right 0.28s ease !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Animated SAGE FAB — iframe for visuals only, sits above the real invisible button
+# Animated SAGE FAB iframe — visual only, pointer-events:none so clicks pass through
 _fab_html = """<!DOCTYPE html><html><head><style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{background:transparent;overflow:visible;width:100%;height:100%;}
@@ -1057,8 +1089,8 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
   border:1.5px solid rgba(56,189,248,0.55);
   background:linear-gradient(145deg,#082040,#050f1f);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  box-shadow:0 4px 24px rgba(56,189,248,0.35);transition:transform .2s,box-shadow .2s;
-  pointer-events:none;  /* clicks pass through to the real button underneath */
+  box-shadow:0 4px 24px rgba(56,189,248,0.35);
+  pointer-events:none;
 }
 #fab svg{width:52px;height:28px;overflow:visible;}
 #fab polyline{fill:none;stroke:#38bdf8;stroke-width:2;stroke-linecap:round;
@@ -1081,23 +1113,30 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
 <script>
 (function(){
   var fe=window.frameElement;
-  if(fe){fe.style.cssText='position:fixed!important;bottom:4.8rem!important;right:0.3rem!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';}
+  if(fe){
+    fe.style.position='fixed';
+    fe.style.bottom='4.8rem';
+    fe.style.right='0.3rem';
+    fe.style.width='100px';
+    fe.style.height='100px';
+    fe.style.border='none';
+    fe.style.background='transparent';
+    fe.style.zIndex='99997';
+    fe.style.overflow='visible';
+    fe.style.pointerEvents='none';
+  }
 })();
 </script>
 </body></html>"""
 
 _comp_sage.html(_fab_html, height=100, scrolling=False)
 
-# Real invisible Streamlit button layered exactly over the FAB visual
-with st.container():
-    st.markdown('<div class="sage-real-btn">', unsafe_allow_html=True)
-    if st.button("⚡", key="sage_fab_open", help="Open Sage"):
-        st.session_state.sage_open = True
-    st.markdown('</div>', unsafe_allow_html=True)
+# Invisible real Streamlit button — CSS above positions it fixed over the FAB
+if st.button("⚡", key="sage_fab_open", help="Open Sage"):
+    st.session_state.sage_open = True
+    st.rerun()
 
-if 'sage_open' not in st.session_state:
-    st.session_state.sage_open = False
-
+# ── Dialog definition ─────────────────────────────────────────────────────────
 @st.dialog("SAGE — Sentiment Signal Assistant", width="small")
 def _sage_dialog():
     # Welcome + chips when no history
@@ -1111,41 +1150,41 @@ def _sage_dialog():
         ]
         for _ci, _chip in enumerate(_chips):
             if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
+                # Keep dialog open — set pending and rerun; dialog re-opens via sage_open=True
                 st.session_state.sage_pending = _chip
-                st.session_state.sage_open = False
                 st.rerun()
 
-    # Chat history — plain messages, no avatars
+    # Chat history
     for _sm in st.session_state.sage_msgs:
-        _align = "right" if _sm["role"] == "user" else "left"
-        _bg    = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
-        _border = "14px 14px 2px 14px" if _sm["role"] == "user" else "2px 14px 14px 14px"
+        _bg     = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
+        _radius = "14px 14px 2px 14px" if _sm["role"] == "user" else "2px 14px 14px 14px"
+        _align  = "flex-end" if _sm["role"] == "user" else "flex-start"
         st.markdown(
-            f"<div style='display:flex;justify-content:{'flex-end' if _sm['role']=='user' else 'flex-start'};margin:2px 0;'>"
-            f"<div style='background:{_bg};border-radius:{_border};padding:0.45rem 0.75rem;"
-            f"max-width:88%;font-size:0.82rem;color:#e2e8f0;line-height:1.5;'>"
+            f"<div style='display:flex;justify-content:{_align};margin:3px 0;'>"
+            f"<div style='background:{_bg};border-radius:{_radius};"
+            f"padding:0.45rem 0.75rem;max-width:88%;font-size:0.82rem;"
+            f"color:#e2e8f0;line-height:1.5;word-break:break-word;'>"
             f"{_sm['content']}</div></div>",
             unsafe_allow_html=True,
         )
 
+    # Thinking indicator
     if st.session_state.get("sage_pending"):
         st.markdown(
             "<div style='color:#94a3b8;font-size:0.8rem;padding:0.3rem 0;'>⏳ Thinking…</div>",
             unsafe_allow_html=True,
         )
 
-    # Chat input
+    # Chat input — stays inside dialog, does NOT close it
     _dialog_input = st.chat_input("Ask about a stock or market…", key="sage_dialog_input")
     if _dialog_input:
         st.session_state.sage_pending = _dialog_input
-        st.session_state.sage_open = False
+        # sage_open stays True so dialog re-opens after rerun with reply shown
         st.rerun()
 
+# ── Open dialog if flagged ────────────────────────────────────────────────────
 if st.session_state.sage_open:
-    st.markdown("<script>document.body.classList.add('sage-dialog-open')</script>", unsafe_allow_html=True)
     _sage_dialog()
-else:
-    st.markdown("<script>document.body.classList.remove('sage-dialog-open')</script>", unsafe_allow_html=True)
 
 
 # Tab pills row
