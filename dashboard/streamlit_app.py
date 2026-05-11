@@ -1016,76 +1016,75 @@ if st.session_state.sage_pending:
 
 import streamlit.components.v1 as _comp_sage
 
-# ── SAGE chatbot: animated FAB + st.dialog panel ─────────────────────────────
-import streamlit.components.v1 as _comp_sage
+# ── SAGE: right sidebar chat (native Streamlit — reliable, persistent) ────────
+# Using st.sidebar which is already fixed-positioned, scrollable independently,
+# and does NOT close on rerun. This is the correct Streamlit pattern.
 
-if 'sage_open' not in st.session_state:
-    st.session_state.sage_open = False
-
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# Style sidebar to look like SAGE panel (right side)
 st.markdown("""
 <style>
-/* 1. Hide the real ⚡ button from page flow — it only exists as fixed overlay */
-div[data-testid="stMainBlockContainer"] > div > div[data-testid="stVerticalBlock"]
-  > div.element-container:has(button[kind="secondary"][title="Open Sage"]) {
-    position: fixed !important;
-    bottom: 4.8rem !important;
-    right: 0.3rem !important;
-    width: 100px !important;
-    height: 100px !important;
-    opacity: 0 !important;
-    z-index: 99999 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-div[data-testid="stMainBlockContainer"] > div > div[data-testid="stVerticalBlock"]
-  > div.element-container:has(button[kind="secondary"][title="Open Sage"]) button {
-    width: 100px !important;
-    height: 100px !important;
-}
-
-/* 2. Dialog as right-side panel — lifted above Manage app bar */
-div[data-testid="stDialog"] > div > div {
-    position: fixed !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 3rem !important;
+/* Move sidebar to RIGHT side and style as SAGE panel */
+[data-testid="stSidebar"] {
     left: auto !important;
-    width: 360px !important;
-    max-width: 360px !important;
-    height: calc(100vh - 3rem) !important;
-    max-height: calc(100vh - 3rem) !important;
-    border-radius: 0 0 0 12px !important;
-    border-left: 1px solid rgba(56,189,248,0.25) !important;
-    border-bottom: 1px solid rgba(56,189,248,0.15) !important;
+    right: 0 !important;
     background: #080f1e !important;
-    margin: 0 !important;
-    transform: none !important;
-    box-shadow: -8px 0 48px rgba(0,0,0,0.8) !important;
+    border-left: 1px solid rgba(56,189,248,0.22) !important;
+    border-right: none !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
 }
-div[data-testid="stDialog"] [data-testid="stDialogContent"] {
-    padding: 0.75rem 1rem 0.5rem !important;
-    height: 100% !important;
-    overflow-y: auto !important;
-    display: flex !important;
-    flex-direction: column !important;
+[data-testid="stSidebar"] > div:first-child {
+    background: #080f1e !important;
+    padding-top: 0.75rem !important;
 }
-
-/* 3. Push main content left when dialog open — use margin on the main block */
-div[data-testid="stDialog"] ~ div[data-testid="stMainBlockContainer"],
-div[data-testid="stMainBlockContainer"]:has(~ div[data-testid="stDialog"]) {
-    padding-right: 370px !important;
-    transition: padding-right 0.28s ease !important;
+/* Hide default sidebar nav toggle arrow on left — we have our own FAB */
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+/* When sidebar open, push main content left */
+[data-testid="stSidebar"][aria-expanded="true"] ~ [data-testid="stMainBlockContainer"] {
+    margin-right: 320px !important;
+    transition: margin-right 0.3s ease !important;
+}
+/* Animated FAB — fixed bottom right, always visible */
+.sage-fab-wrapper {
+    position: fixed !important;
+    bottom: 4.5rem !important;
+    right: 0.5rem !important;
+    width: 90px !important;
+    height: 90px !important;
+    z-index: 99999 !important;
+    cursor: pointer !important;
+}
+/* Style chat input inside sidebar */
+[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
+    background: #0c1824 !important;
+    border: 1px solid rgba(56,189,248,0.22) !important;
+    color: #f1f5f9 !important;
+}
+/* No avatars on chat messages */
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"] {
+    display: none !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatMessage"] {
+    padding: 0.2rem 0 !important;
+    background: transparent !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Animated SAGE FAB iframe — visual only, pointer-events:none so clicks pass through
+# Track open state
+if 'sage_open' not in st.session_state:
+    st.session_state.sage_open = False
+
+# Animated FAB button — using st.components for the visual,
+# with a real Streamlit button underneath for the click
+import streamlit.components.v1 as _comp_sage
+
 _fab_html = """<!DOCTYPE html><html><head><style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{background:transparent;overflow:visible;width:100%;height:100%;}
 #fab{
-  position:fixed;bottom:14px;right:14px;width:72px;height:72px;border-radius:18px;
+  position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:18px;
   border:1.5px solid rgba(56,189,248,0.55);
   background:linear-gradient(145deg,#082040,#050f1f);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
@@ -1101,7 +1100,7 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
   70%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:-120;opacity:.3}}
 .lbl{font-family:monospace;font-size:9px;font-weight:700;letter-spacing:3px;color:#38bdf8;
   text-shadow:0 0 8px rgba(56,189,248,.7);}
-#ring{position:fixed;bottom:14px;right:14px;width:72px;height:72px;border-radius:20px;
+#ring{position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:20px;
   border:2px solid rgba(56,189,248,.4);animation:pulse 3s ease-out infinite;pointer-events:none;}
 @keyframes pulse{0%{opacity:.7;transform:scale(1)}70%{opacity:0;transform:scale(1.28)}100%{opacity:0;transform:scale(1.28)}}
 </style></head><body>
@@ -1114,77 +1113,90 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
 (function(){
   var fe=window.frameElement;
   if(fe){
-    fe.style.position='fixed';
-    fe.style.bottom='4.8rem';
-    fe.style.right='0.3rem';
-    fe.style.width='100px';
-    fe.style.height='100px';
-    fe.style.border='none';
-    fe.style.background='transparent';
-    fe.style.zIndex='99997';
-    fe.style.overflow='visible';
-    fe.style.pointerEvents='none';
+    fe.style.cssText='position:fixed!important;bottom:4.5rem!important;right:0.5rem!important;width:90px!important;height:90px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';
   }
 })();
 </script>
 </body></html>"""
 
-_comp_sage.html(_fab_html, height=100, scrolling=False)
+_comp_sage.html(_fab_html, height=90, scrolling=False)
 
-# Invisible real Streamlit button — CSS above positions it fixed over the FAB
-if st.button("⚡", key="sage_fab_open", help="Open Sage"):
-    st.session_state.sage_open = True
+# Real button hidden behind FAB — CSS positions it over the icon
+st.markdown("""
+<style>
+/* Pull the FAB toggle button out of page flow onto the fixed FAB position */
+div[data-testid="stMainBlockContainer"]
+  button[title="Toggle SAGE"] {
+    position: fixed !important;
+    bottom: 4.5rem !important;
+    right: 0.5rem !important;
+    width: 90px !important;
+    height: 90px !important;
+    opacity: 0 !important;
+    z-index: 99998 !important;
+    cursor: pointer !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+if st.button("S", key="sage_toggle_btn", help="Toggle SAGE"):
+    st.session_state.sage_open = not st.session_state.sage_open
     st.rerun()
 
-# ── Dialog definition ─────────────────────────────────────────────────────────
-@st.dialog("SAGE — Sentiment Signal Assistant", width="small")
-def _sage_dialog():
-    # Welcome + chips when no history
-    if not st.session_state.sage_msgs:
-        st.caption("👋 Ask me about any stock or market. Type a ticker like **NVDA** for a quick signal.")
-        _chips = [
-            "What's the strongest signal today?",
-            "Which markets are bearish?",
-            "Explain the top BUY signal",
-            "Any high-confidence SELL signals?",
-        ]
-        for _ci, _chip in enumerate(_chips):
-            if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
-                # Keep dialog open — set pending and rerun; dialog re-opens via sage_open=True
-                st.session_state.sage_pending = _chip
+# ── Sidebar chat panel ────────────────────────────────────────────────────────
+if st.session_state.sage_open:
+    with st.sidebar:
+        # Header
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            st.markdown(
+                "<p style='font-family:monospace;font-weight:700;font-size:1rem;"
+                "color:#f1f5f9;letter-spacing:2px;margin:0;'>⚡ SAGE</p>"
+                "<p style='font-size:0.65rem;color:#38bdf8;margin:0 0 0.5rem;'>"
+                "Sentiment Signal Assistant</p>",
+                unsafe_allow_html=True)
+        with col2:
+            if st.button("✕", key="sage_close_btn"):
+                st.session_state.sage_open = False
                 st.rerun()
 
-    # Chat history
-    for _sm in st.session_state.sage_msgs:
-        _bg     = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
-        _radius = "14px 14px 2px 14px" if _sm["role"] == "user" else "2px 14px 14px 14px"
-        _align  = "flex-end" if _sm["role"] == "user" else "flex-start"
-        st.markdown(
-            f"<div style='display:flex;justify-content:{_align};margin:3px 0;'>"
-            f"<div style='background:{_bg};border-radius:{_radius};"
-            f"padding:0.45rem 0.75rem;max-width:88%;font-size:0.82rem;"
-            f"color:#e2e8f0;line-height:1.5;word-break:break-word;'>"
-            f"{_sm['content']}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.divider()
 
-    # Thinking indicator
-    if st.session_state.get("sage_pending"):
-        st.markdown(
-            "<div style='color:#94a3b8;font-size:0.8rem;padding:0.3rem 0;'>⏳ Thinking…</div>",
-            unsafe_allow_html=True,
-        )
+        # Welcome + chips
+        if not st.session_state.sage_msgs:
+            st.info("👋 Ask me about any stock or market.\nType a ticker like **NVDA** for a quick signal.")
+            for _ci, _chip in enumerate([
+                "What's the strongest signal today?",
+                "Which markets are bearish?",
+                "Explain the top BUY signal",
+                "Any high-confidence SELL signals?",
+            ]):
+                if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
+                    st.session_state.sage_pending = _chip
+                    st.rerun()
 
-    # Chat input — stays inside dialog, does NOT close it
-    _dialog_input = st.chat_input("Ask about a stock or market…", key="sage_dialog_input")
-    if _dialog_input:
-        st.session_state.sage_pending = _dialog_input
-        # sage_open stays True so dialog re-opens after rerun with reply shown
-        st.rerun()
+        # Chat history — custom styled bubbles, no avatars
+        for _sm in st.session_state.sage_msgs:
+            _bg = "#1e3a5f" if _sm["role"] == "user" else "#0f1c2e"
+            _r  = "12px 12px 2px 12px" if _sm["role"] == "user" else "2px 12px 12px 12px"
+            _fl = "flex-end" if _sm["role"] == "user" else "flex-start"
+            st.markdown(
+                f"<div style='display:flex;justify-content:{_fl};margin:3px 0;'>"
+                f"<div style='background:{_bg};border-radius:{_r};"
+                f"padding:0.45rem 0.7rem;max-width:90%;font-size:0.81rem;"
+                f"color:#e2e8f0;line-height:1.5;word-break:break-word;'>"
+                f"{_sm['content']}</div></div>",
+                unsafe_allow_html=True)
 
-# ── Open dialog if flagged ────────────────────────────────────────────────────
-if st.session_state.sage_open:
-    _sage_dialog()
+        if st.session_state.get("sage_pending"):
+            st.markdown("<p style='color:#94a3b8;font-size:0.8rem;'>⏳ Thinking…</p>",
+                       unsafe_allow_html=True)
+
+        # Native chat input — works reliably, no hacks needed
+        _user_input = st.chat_input("Ask about a stock or market…", key="sage_chat_input")
+        if _user_input:
+            st.session_state.sage_pending = _user_input
+            st.rerun()
 
 
 # Tab pills row
