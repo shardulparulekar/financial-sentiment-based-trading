@@ -1017,374 +1017,156 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
         _sage_hist += f"<div class=\'smsg sbot\'>{_c}</div>"
 
 
-# ── Sage: self-positioning iframe widget ──────────────────────────────────────
+
+# -- Sage: FAB button (iframe) + native Streamlit chat panel --
 import streamlit.components.v1 as _comp_sage
 
-# No external CSS needed — the iframe positions itself via JS on window.frameElement
-# exactly like Streamlit's own "Manage app" toolbar button does.
+if 'sage_open' not in st.session_state:
+    st.session_state.sage_open = False
 
-_sage_hist_html = ""
-for _shm in st.session_state.sage_msgs[-16:]:
-    _shc = _shm["content"].replace('"', '&quot;').replace("'", "&#39;")
-    if _shm["role"] == "user":
-        _sage_hist_html += f'<div class="msg mu">{_shc}</div>'
-    else:
-        _sage_hist_html += f'<div class="msg mb">{_shc}</div>'
+_fab_clicked = st.query_params.get('sage_toggle')
+if _fab_clicked:
+    st.session_state.sage_open = not st.session_state.sage_open
+    st.query_params.clear()
+    st.rerun()
 
-_sage_widget = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-* {{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif; }}
-html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }}
+if st.session_state.sage_open:
+    st.markdown('<style>body { padding-right: 330px !important; }</style>', unsafe_allow_html=True)
 
-/* ── FAB ── */
-#fab {{
+_fab_html = '''<!DOCTYPE html>
+<html><head><style>
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { background:transparent; overflow:visible; width:100%; height:100%; }
+#fab {
     position:fixed; bottom:14px; right:14px;
     width:72px; height:72px; border-radius:18px; cursor:pointer;
     border:1.5px solid rgba(56,189,248,0.55);
     background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
-    padding:0; overflow:hidden;
-    box-shadow:0 4px 24px rgba(56,189,248,0.35), 0 8px 32px rgba(0,0,0,0.8);
-    transition:transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-    z-index:10;
-}}
-#fab:hover {{ transform:scale(1.08); box-shadow:0 6px 32px rgba(56,189,248,0.6); }}
-
-#fab svg.ecg {{ width:52px; height:28px; overflow:visible; }}
-#fab svg.ecg polyline {{
+    box-shadow:0 4px 24px rgba(56,189,248,0.35);
+    transition:transform 0.2s ease;
+}
+#fab:hover { transform:scale(1.08); }
+#fab svg { width:52px; height:28px; overflow:visible; }
+#fab svg polyline {
     fill:none; stroke:#38bdf8; stroke-width:2;
     stroke-linecap:round; stroke-linejoin:round;
     stroke-dasharray:120; stroke-dashoffset:120;
     animation:draw 2.4s ease-in-out infinite;
     filter:drop-shadow(0 0 3px rgba(56,189,248,0.8));
-}}
-@keyframes draw {{
-    0%   {{ stroke-dashoffset:120; opacity:0.3; }}
-    40%  {{ stroke-dashoffset:0;   opacity:1; }}
-    70%  {{ stroke-dashoffset:0;   opacity:1; }}
-    100% {{ stroke-dashoffset:-120; opacity:0.3; }}
-}}
-#fab .flabel {{
-    font-family:monospace; font-size:9px; font-weight:700;
-    letter-spacing:3px; color:#38bdf8; opacity:0.9;
-    text-shadow:0 0 8px rgba(56,189,248,0.7);
-}}
-#ring {{
+}
+@keyframes draw {
+    0%   { stroke-dashoffset:120; opacity:0.3; }
+    40%  { stroke-dashoffset:0;   opacity:1; }
+    70%  { stroke-dashoffset:0;   opacity:1; }
+    100% { stroke-dashoffset:-120; opacity:0.3; }
+}
+.lbl { font-family:monospace; font-size:9px; font-weight:700;
+       letter-spacing:3px; color:#38bdf8; opacity:0.9; }
+#ring {
     position:fixed; bottom:14px; right:14px;
     width:72px; height:72px; border-radius:20px;
     border:2px solid rgba(56,189,248,0.4);
     animation:pulse 3s ease-out infinite; pointer-events:none;
-    z-index:9;
-}}
-@keyframes pulse {{
-    0%   {{ opacity:0.7; transform:scale(1);   }}
-    70%  {{ opacity:0;   transform:scale(1.28); }}
-    100% {{ opacity:0;   transform:scale(1.28); }}
-}}
-
-/* ── Panel: fixed right, full height, own scroll ── */
-#panel {{
-    display:none;
-    position:fixed; top:0; right:0; bottom:48px;
-    width:320px;
-    background:#080f1e;
-    border-left:1px solid rgba(56,189,248,0.22);
-    border-bottom:1px solid rgba(56,189,248,0.12);
-    border-bottom-left-radius:12px;
-    flex-direction:column;
-    box-shadow:-8px 0 48px rgba(0,0,0,0.85);
-    overflow:hidden;
-    z-index:10;
-}}
-@keyframes slideIn {{ from{{opacity:0;transform:translateX(20px);}} to{{opacity:1;transform:translateX(0);}} }}
-#panel.open {{ display:flex; animation:slideIn 0.25s cubic-bezier(.4,0,.2,1); }}
-
-.hdr {{
-    display:flex; align-items:center; gap:0.6rem;
-    padding:0.8rem 1rem;
-    background:linear-gradient(135deg,#0c1f3d,#080f1e);
-    border-bottom:1px solid rgba(56,189,248,0.12); flex-shrink:0;
-}}
-.hdr-icon {{
-    width:34px; height:34px; border-radius:10px; flex-shrink:0;
-    background:linear-gradient(145deg,#082040,#050f1f);
-    border:1px solid rgba(56,189,248,0.35);
-    display:flex; align-items:center; justify-content:center;
-}}
-.hdr-icon svg {{ width:22px; height:16px; }}
-.hdr-icon svg polyline {{
-    fill:none; stroke:#38bdf8; stroke-width:2;
-    stroke-linecap:round; stroke-linejoin:round;
-    filter:drop-shadow(0 0 3px rgba(56,189,248,0.8));
-}}
-.hname {{ font-size:0.9rem; font-weight:700; color:#f1f5f9; font-family:monospace; letter-spacing:2px; }}
-.hsub  {{ font-size:0.65rem; color:#38bdf8; opacity:0.8; }}
-#cls {{
-    margin-left:auto; background:none; border:none; color:#475569;
-    font-size:1.1rem; cursor:pointer; padding:0.25rem 0.45rem;
-    border-radius:6px; transition:color 0.15s, background 0.15s;
-}}
-#cls:hover {{ color:#94a3b8; background:rgba(255,255,255,0.06); }}
-
-#msgs {{
-    flex:1; overflow-y:auto; padding:0.75rem;
-    display:flex; flex-direction:column; gap:0.45rem; scroll-behavior:smooth;
-}}
-#msgs::-webkit-scrollbar {{ width:3px; }}
-#msgs::-webkit-scrollbar-thumb {{ background:#1e3a5f; border-radius:2px; }}
-.msg {{ font-size:0.79rem; line-height:1.5; max-width:92%; word-break:break-word; }}
-.mu {{
-    align-self:flex-end;
-    background:linear-gradient(135deg,#1e3a5f,#152d4a);
-    color:#e2e8f0; padding:0.4rem 0.75rem;
-    border-radius:14px 14px 2px 14px;
-}}
-.mb {{
-    align-self:flex-start; background:#0f1c2e; color:#cbd5e1;
-    padding:0.5rem 0.7rem; border-radius:2px 14px 14px 14px;
-    border:1px solid rgba(56,189,248,0.1);
-}}
-.mg {{
-    align-self:center; text-align:center;
-    background:linear-gradient(135deg,#0c1f3d,#080f1e);
-    border:1px solid rgba(56,189,248,0.12); border-radius:12px;
-    padding:0.6rem 0.8rem; color:#94a3b8; font-size:0.76rem; max-width:100%;
-}}
-.typing {{ display:flex; gap:4px; padding:0.4rem 0.7rem; align-self:flex-start; }}
-.typing span {{
-    width:5px; height:5px; background:#38bdf8;
-    border-radius:50%; animation:bounce 1.2s infinite;
-}}
-.typing span:nth-child(2) {{ animation-delay:0.18s; }}
-.typing span:nth-child(3) {{ animation-delay:0.36s; }}
-@keyframes bounce {{ 0%,60%,100%{{transform:translateY(0);}} 30%{{transform:translateY(-6px);}} }}
-
-#chips {{ padding:0.45rem 0.75rem 0.2rem; display:flex; flex-wrap:wrap; gap:0.28rem; flex-shrink:0; }}
-.chip {{
-    background:#0c1f3d; color:#38bdf8;
-    border:1px solid rgba(56,189,248,0.22); border-radius:20px;
-    font-size:0.69rem; padding:0.2rem 0.52rem;
-    cursor:pointer; transition:all 0.15s; white-space:nowrap;
-}}
-.chip:hover {{ background:#1e3a5f; border-color:#38bdf8; color:#7dd3fc; }}
-
-.irow {{
-    display:flex; gap:0.4rem; padding:0.55rem 0.75rem 0.65rem;
-    border-top:1px solid rgba(56,189,248,0.09); flex-shrink:0;
-}}
-#inp {{
-    flex:1; background:#0c1824; border:1px solid rgba(56,189,248,0.22);
-    border-radius:10px; color:#f1f5f9; font-size:0.79rem;
-    padding:0.4rem 0.7rem; outline:none; transition:border-color 0.15s;
-}}
-#inp:focus {{ border-color:#38bdf8; box-shadow:0 0 0 2px rgba(56,189,248,0.12); }}
-#inp::placeholder {{ color:#1e3a5f; }}
-#snd {{
-    background:#0c1f3d; border:1px solid rgba(56,189,248,0.28);
-    border-radius:10px; color:#38bdf8; font-size:1.1rem;
-    padding:0 0.8rem; cursor:pointer; transition:all 0.15s; flex-shrink:0;
-}}
-#snd:hover {{ background:#38bdf8; color:#050f1f; }}
-</style>
-</head>
+}
+@keyframes pulse {
+    0%   { opacity:0.7; transform:scale(1);   }
+    70%  { opacity:0;   transform:scale(1.28); }
+    100% { opacity:0;   transform:scale(1.28); }
+}
+</style></head>
 <body>
-<div id="ring"></div>
-<button id="fab" title="Ask Sage">
-  <svg class="ecg" viewBox="0 0 52 28">
-    <polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/>
+<div id='ring'></div>
+<button id='fab' title='Ask Sage'>
+  <svg viewBox='0 0 52 28'>
+    <polyline points='0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14'/>
   </svg>
-  <span class="flabel">SAGE</span>
+  <span class='lbl'>SAGE</span>
 </button>
-<div id="panel">
-  <div class="hdr">
-    <div class="hdr-icon">
-      <svg viewBox="0 0 52 28">
-        <polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/>
-      </svg>
-    </div>
-    <div>
-      <div class="hname">SAGE</div>
-      <div class="hsub">Sentiment Signal Assistant</div>
-    </div>
-    <button id="cls">&#x2715;</button>
-  </div>
-  <div id="msgs">
-    <div class="msg mg">&#x1F44B; Ask me about any stock or market.<br>
-      Type a ticker like <b>NVDA</b> for a quick signal.
-    </div>
-    {_sage_hist_html}
-  </div>
-  <div id="chips"></div>
-  <div class="irow">
-    <input id="inp" type="text" autocomplete="off" placeholder="Ask about a stock or market&hellip;"/>
-    <button id="snd">&#x2191;</button>
-  </div>
-</div>
-
 <script>
-(function() {{
-  // ── Self-position the iframe fixed to bottom-right, like "Manage app" ──
-  // This runs immediately so there is no flash of wrong position.
-  (function fixIframe() {{
-    var fe = window.frameElement;
-    if (!fe) return;
-    // Remove from normal flow entirely
-    fe.style.cssText = [
-      'position:fixed',
-      'bottom:3.5rem',
-      'right:0',
-      'width:100px',
-      'height:100px',
-      'border:none',
-      'background:transparent',
-      'z-index:99999',
-      'overflow:visible',
-      'transition:width 0.28s cubic-bezier(.4,0,.2,1),height 0.28s cubic-bezier(.4,0,.2,1)',
-    ].join('!important;') + '!important';
-  }})();
-
-  var fab   = document.getElementById('fab'),
-      ring  = document.getElementById('ring'),
-      panel = document.getElementById('panel'),
-      cls   = document.getElementById('cls'),
-      inp   = document.getElementById('inp'),
-      snd   = document.getElementById('snd'),
-      msgs  = document.getElementById('msgs'),
-      chips = document.getElementById('chips');
-
-  var open = false, built = false;
-  var suggs = [
-    "What's the strongest signal today?",
-    "Which markets are bearish?",
-    "Explain the top BUY signal",
-    "Any high-confidence SELL signals?"
-  ];
-
-  function setSize(o) {{
-    var fe = window.frameElement;
-    if (!fe) return;
-    if (o) {{
-      fe.style.width  = '320px';
-      fe.style.height = '100vh';
-      fe.style.bottom = '0';
-      fe.style.right  = '0';
-    }} else {{
-      fe.style.width    = '100px';
-      fe.style.height   = '100px';
-      fe.style.bottom   = '3.5rem';
-      fe.style.right    = '0';
-      fe.style.overflow = 'visible';
-    }}
-  }}
-
-  function setBodyClass(o) {{
-    try {{
-      if (o) window.parent.document.body.classList.add('sage-open');
-      else   window.parent.document.body.classList.remove('sage-open');
-    }} catch(e) {{}}
-  }}
-
-  function toggle() {{
-    open = !open;
-    panel.classList.toggle('open', open);
-    fab.style.opacity      = open ? '0' : '1';
-    fab.style.pointerEvents = open ? 'none' : 'auto';
-    ring.style.display     = open ? 'none' : 'block';
-    setSize(open);
-    setBodyClass(open);
-    if (open) {{ scroll2b(); inp.focus(); if (!built) {{ buildChips(); built = true; }} }}
-  }}
-
-  function scroll2b() {{ msgs.scrollTop = msgs.scrollHeight; }}
-
-  function buildChips() {{
-    chips.innerHTML = '';
-    suggs.forEach(function(s) {{
-      var b = document.createElement('button');
-      b.className = 'chip'; b.textContent = s;
-      b.onclick = function() {{ sendMsg(s); }};
-      chips.appendChild(b);
-    }});
-  }}
-
-  function sendMsg(text) {{
-    if (!text.trim()) return;
-    var ub = document.createElement('div');
-    ub.className = 'msg mu'; ub.textContent = text;
-    msgs.appendChild(ub); scroll2b();
-    inp.value = ''; chips.innerHTML = '';
-    var t = document.createElement('div');
-    t.className = 'typing';
-    t.innerHTML = '<span></span><span></span><span></span>';
-    msgs.appendChild(t); scroll2b();
-    // Write into Streamlit's hidden bridge input in the parent document
-    setTimeout(function() {{
-      try {{
-        var pd = window.parent.document;
-        // Find the hidden bridge input by its aria-label
-        var bridge = pd.querySelector('input[aria-label="sage_bridge"]');
-        if (bridge) {{
-          var nativeInput = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value');
-          nativeInput.set.call(bridge, text);
-          bridge.dispatchEvent(new window.parent.Event('input', {{ bubbles: true }}));
-          bridge.dispatchEvent(new window.parent.Event('change', {{ bubbles: true }}));
-        }}
-      }} catch(e) {{ console.error('sage bridge error:', e); }}
-    }}, 200);
-  }}
-
-  fab.addEventListener('click', toggle);
-  cls.addEventListener('click', toggle);
-  snd.addEventListener('click', function() {{ sendMsg(inp.value); }});
-  inp.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') sendMsg(inp.value); }});
-  scroll2b();
-}})();
+(function() {
+  var fe = window.frameElement;
+  if (fe) {
+    fe.style.cssText = 'position:fixed!important;bottom:3.5rem!important;right:0!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99999!important;overflow:visible!important;';
+  }
+  document.getElementById('fab').addEventListener('click', function() {
+    window.parent.location.href = window.parent.location.pathname + '?sage_toggle=1';
+  });
+})();
 </script>
-</body>
-</html>"""
+</body></html>'''
 
-# Nudge main content left when panel is open so nothing is hidden under it
-st.markdown("""
+_comp_sage.html(_fab_html, height=100, scrolling=False)
+
+# -- Native Streamlit chat panel (only rendered when open) --
+if st.session_state.sage_open:
+    st.markdown("""
 <style>
-body.sage-open .block-container {
-    padding-right: 330px !important;
-    transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
-}
-/* Hide the bridge input completely */
-[data-testid="stTextInput"].sage-bridge-input {
+/* The chat container: fixed right panel */
+.sage-panel {
     position: fixed !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    top: -9999px !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 48px !important;
+    width: 320px !important;
+    background: #080f1e !important;
+    border-left: 1px solid rgba(56,189,248,0.22) !important;
+    border-bottom: 1px solid rgba(56,189,248,0.12) !important;
+    border-bottom-left-radius: 12px !important;
+    box-shadow: -8px 0 48px rgba(0,0,0,0.85) !important;
+    overflow-y: auto !important;
+    z-index: 99998 !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
+/* Push the main page content left */
+.block-container { padding-right: 330px !important; }
+/* Style chat messages inside panel */
+.sage-panel .stChatMessage { background: transparent !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# Hidden bridge: the iframe JS writes into this input to trigger a Python rerun
-_sage_bridge_container = st.container()
-with _sage_bridge_container:
-    _sage_bridge_val = st.text_input(
-        "sage_bridge",
-        key="sage_input_bridge",
-        label_visibility="hidden",
-    )
-st.markdown('<style>[data-testid="stTextInput"]:has(input[aria-label="sage_bridge"]) { position:fixed!important; top:-9999px!important; opacity:0!important; pointer-events:none!important; }</style>', unsafe_allow_html=True)
+    st.markdown('<div class="sage-panel">', unsafe_allow_html=True)
 
-# If the bridge received a new message from the iframe, process it
-if _sage_bridge_val and _sage_bridge_val.strip():
-    if not st.session_state.sage_pending:
-        st.session_state.sage_pending = _sage_bridge_val.strip()
-        # Clear the bridge so it doesn't re-fire
-        st.session_state.sage_input_bridge = ""
+    # Header row
+    _hcol1, _hcol2 = st.columns([6, 1])
+    with _hcol1:
+        st.markdown("""
+<div style='padding:0.7rem 0 0.3rem 0;'>
+  <span style='font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:2px;'>SAGE</span>
+  <span style='font-size:0.65rem;color:#38bdf8;opacity:0.8;display:block;'>Sentiment Signal Assistant</span>
+</div>""", unsafe_allow_html=True)
+    with _hcol2:
+        if st.button('x', key='sage_close'):
+            st.session_state.sage_open = False
+            st.rerun()
+
+    # Welcome message if no history
+    if not st.session_state.sage_msgs:
+        st.info('Ask me about any stock or market. Type a ticker like **NVDA** for a quick signal.')
+
+    # Chat history
+    for _sm in st.session_state.sage_msgs:
+        with st.chat_message(_sm['role']):
+            st.write(_sm['content'])
+
+    # Suggestion buttons
+    if not st.session_state.sage_msgs:
+        _chips = ["What's the strongest signal?", "Which markets are bearish?",
+                  "Explain the top BUY signal", "Any SELL signals?"]
+        for _ci, _chip in enumerate(_chips):
+            if st.button(_chip, key=f'sage_chip_{_ci}', use_container_width=True):
+                st.session_state.sage_pending = _chip
+                st.rerun()
+
+    # Native chat input - this is guaranteed to work in Streamlit
+    _user_input = st.chat_input('Ask about a stock or market...', key='sage_chat_input')
+    if _user_input:
+        st.session_state.sage_pending = _user_input
         st.rerun()
 
-_comp_sage.html(_sage_widget, height=80, scrolling=False)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 
