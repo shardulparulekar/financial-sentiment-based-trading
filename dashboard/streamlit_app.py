@@ -955,7 +955,8 @@ if st.session_state.sage_pending:
                         f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
                         for mk,d in _sent2.items()))
                 _system = ("You are Sage, a concise financial signal assistant. "
-                           "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
+                           "Answer in 2-3 sentences. Never give direct investment advice. "
+                           "Reply in plain text only, no HTML tags.\n\n"
                            f"Context:\n{chr(10).join(_ctx) or 'No data.'}")
                 # Build Mistral-7B-Instruct-v0.2 prompt — [INST]...[/INST] format
                 _hist_turns = st.session_state.sage_msgs[-6:]
@@ -1005,16 +1006,13 @@ if st.session_state.sage_pending:
         except Exception as _e:
             _reply = f"Error: {_e}"
 
+    # Strip any HTML tags the model may have returned
+    import re as _re
+    _reply_clean = _re.sub(r'<[^>]+>', '', _reply).strip()
     st.session_state.sage_msgs.append({"role":"user","content":_pending})
-    st.session_state.sage_msgs.append({"role":"assistant","content":_reply})
+    st.session_state.sage_msgs.append({"role":"assistant","content":_reply_clean})
 
-_sage_hist = ""
-for _sm2 in st.session_state.sage_msgs[-16:]:
-    _c = _sm2["content"].replace("'", "&#39;")
-    if _sm2["role"] == "user":
-        _sage_hist += f"<div class=\'smsg suser\'>{_c}</div>"
-    else:
-        _sage_hist += f"<div class=\'smsg sbot\'>{_c}</div>"
+# _sage_hist removed — sidebar now uses st.chat_message directly
 
 
 
