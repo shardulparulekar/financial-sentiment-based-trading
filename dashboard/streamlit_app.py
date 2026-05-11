@@ -1018,185 +1018,59 @@ for _sm2 in st.session_state.sage_msgs[-16:]:
 
 
 
-# -- Sage: FAB button (iframe) + native Streamlit chat panel --
-import streamlit.components.v1 as _comp_sage
+# -- Sage: sidebar chatbot using native Streamlit chat elements --
+# Pattern from: docs.streamlit.io/develop/tutorials/chat-and-llm-apps/build-conversational-apps
 
-if 'sage_open' not in st.session_state:
-    st.session_state.sage_open = False
+with st.sidebar:
+    st.markdown(
+        "<div style='font-family:monospace;font-weight:700;font-size:1.1rem;"
+        "color:#f1f5f9;letter-spacing:2px;padding:0.5rem 0 0.1rem;'>⚡ SAGE</div>"
+        "<div style='font-size:0.7rem;color:#38bdf8;margin-bottom:0.75rem;'>"
+        "Sentiment Signal Assistant</div>",
+        unsafe_allow_html=True,
+    )
 
-# Hidden checkbox — the postMessage listener below clicks it to trigger rerun
-# We hide it with CSS so it's invisible but still reactive
-st.markdown("""
-<style>
-div[data-testid='stCheckbox'].sage-toggle-cb { 
-    position:fixed; top:-9999px; opacity:0; pointer-events:none; width:1px; height:1px;
-}
-</style>
-<script>
-// Listen for postMessage from the SAGE FAB iframe
-(function() {
-  if (window._sageListenerAdded) return;
-  window._sageListenerAdded = true;
-  window.addEventListener('message', function(e) {
-    if (!e.data || e.data.type !== 'sage_toggle') return;
-    // Find and click the hidden sage toggle checkbox to trigger Streamlit rerun
-    var cb = document.querySelector('div.sage-toggle-cb input[type=checkbox]');
-    if (cb) cb.click();
-  });
-})();
-</script>
-""", unsafe_allow_html=True)
-
-# The checkbox value flip triggers a rerun; we use it to toggle sage_open
-_sage_toggle_cb = st.checkbox('sage_toggle', key='sage_toggle_cb', label_visibility='hidden')
-st.markdown('<script>document.querySelector("[data-testid=stCheckbox]").classList.add("sage-toggle-cb")</script>', unsafe_allow_html=True)
-
-if st.session_state.get('_sage_prev_cb') != _sage_toggle_cb:
-    st.session_state['_sage_prev_cb'] = _sage_toggle_cb
-    if 'sage_open' in st.session_state:  # skip the very first render
-        st.session_state.sage_open = not st.session_state.sage_open
-        st.rerun()
-st.session_state['_sage_prev_cb'] = _sage_toggle_cb
-
-if st.session_state.sage_open:
-    st.markdown('<style>body { padding-right: 330px !important; }</style>', unsafe_allow_html=True)
-
-_fab_html = '''<!DOCTYPE html>
-<html><head><style>
-* { box-sizing:border-box; margin:0; padding:0; }
-html,body { background:transparent; overflow:visible; width:100%; height:100%; }
-#fab {
-    position:fixed; bottom:14px; right:14px;
-    width:72px; height:72px; border-radius:18px; cursor:pointer;
-    border:1.5px solid rgba(56,189,248,0.55);
-    background:linear-gradient(145deg,#082040 0%,#050f1f 100%);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-    box-shadow:0 4px 24px rgba(56,189,248,0.35);
-    transition:transform 0.2s ease;
-}
-#fab:hover { transform:scale(1.08); }
-#fab svg { width:52px; height:28px; overflow:visible; }
-#fab svg polyline {
-    fill:none; stroke:#38bdf8; stroke-width:2;
-    stroke-linecap:round; stroke-linejoin:round;
-    stroke-dasharray:120; stroke-dashoffset:120;
-    animation:draw 2.4s ease-in-out infinite;
-    filter:drop-shadow(0 0 3px rgba(56,189,248,0.8));
-}
-@keyframes draw {
-    0%   { stroke-dashoffset:120; opacity:0.3; }
-    40%  { stroke-dashoffset:0;   opacity:1; }
-    70%  { stroke-dashoffset:0;   opacity:1; }
-    100% { stroke-dashoffset:-120; opacity:0.3; }
-}
-.lbl { font-family:monospace; font-size:9px; font-weight:700;
-       letter-spacing:3px; color:#38bdf8; opacity:0.9; }
-#ring {
-    position:fixed; bottom:14px; right:14px;
-    width:72px; height:72px; border-radius:20px;
-    border:2px solid rgba(56,189,248,0.4);
-    animation:pulse 3s ease-out infinite; pointer-events:none;
-}
-@keyframes pulse {
-    0%   { opacity:0.7; transform:scale(1);   }
-    70%  { opacity:0;   transform:scale(1.28); }
-    100% { opacity:0;   transform:scale(1.28); }
-}
-</style></head>
-<body>
-<div id='ring'></div>
-<button id='fab' title='Ask Sage'>
-  <svg viewBox='0 0 52 28'>
-    <polyline points='0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14'/>
-  </svg>
-  <span class='lbl'>SAGE</span>
-</button>
-<script>
-(function() {
-  var fe = window.frameElement;
-  if (fe) {
-    fe.style.cssText = 'position:fixed!important;bottom:3.5rem!important;right:0!important;width:100px!important;height:100px!important;border:none!important;background:transparent!important;z-index:99999!important;overflow:visible!important;';
-  }
-  document.getElementById('fab').addEventListener('click', function() {
-    // postMessage works across sandbox boundaries - no allow-top-navigation needed
-    window.parent.postMessage({type: 'sage_toggle'}, '*');
-  });
-})();
-</script>
-</body></html>'''
-
-_comp_sage.html(_fab_html, height=100, scrolling=False)
-
-# -- Native Streamlit chat panel (only rendered when open) --
-if st.session_state.sage_open:
-    st.markdown("""
-<style>
-/* The chat container: fixed right panel */
-.sage-panel {
-    position: fixed !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 48px !important;
-    width: 320px !important;
-    background: #080f1e !important;
-    border-left: 1px solid rgba(56,189,248,0.22) !important;
-    border-bottom: 1px solid rgba(56,189,248,0.12) !important;
-    border-bottom-left-radius: 12px !important;
-    box-shadow: -8px 0 48px rgba(0,0,0,0.85) !important;
-    overflow-y: auto !important;
-    z-index: 99998 !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-/* Push the main page content left */
-.block-container { padding-right: 330px !important; }
-/* Style chat messages inside panel */
-.sage-panel .stChatMessage { background: transparent !important; }
-</style>
-""", unsafe_allow_html=True)
-
-    st.markdown('<div class="sage-panel">', unsafe_allow_html=True)
-
-    # Header row
-    _hcol1, _hcol2 = st.columns([6, 1])
-    with _hcol1:
-        st.markdown("""
-<div style='padding:0.7rem 0 0.3rem 0;'>
-  <span style='font-size:0.9rem;font-weight:700;color:#f1f5f9;font-family:monospace;letter-spacing:2px;'>SAGE</span>
-  <span style='font-size:0.65rem;color:#38bdf8;opacity:0.8;display:block;'>Sentiment Signal Assistant</span>
-</div>""", unsafe_allow_html=True)
-    with _hcol2:
-        if st.button('x', key='sage_close'):
-            st.session_state.sage_open = False
-            st.rerun()
-
-    # Welcome message if no history
+    # Welcome hint
     if not st.session_state.sage_msgs:
-        st.info('Ask me about any stock or market. Type a ticker like **NVDA** for a quick signal.')
-
-    # Chat history
-    for _sm in st.session_state.sage_msgs:
-        with st.chat_message(_sm['role']):
-            st.write(_sm['content'])
-
-    # Suggestion buttons
-    if not st.session_state.sage_msgs:
-        _chips = ["What's the strongest signal?", "Which markets are bearish?",
-                  "Explain the top BUY signal", "Any SELL signals?"]
+        st.info(
+            "👋 Ask me about any stock or market.\n\n"
+            "Type a ticker like **NVDA** for a quick signal.",
+            icon=None,
+        )
+        # Quick-start chips
+        _chips = [
+            "What's the strongest signal today?",
+            "Which markets are bearish?",
+            "Explain the top BUY signal",
+            "Any high-confidence SELL signals?",
+        ]
         for _ci, _chip in enumerate(_chips):
-            if st.button(_chip, key=f'sage_chip_{_ci}', use_container_width=True):
+            if st.button(_chip, key=f"sage_chip_{_ci}", use_container_width=True):
                 st.session_state.sage_pending = _chip
                 st.rerun()
 
-    # Native chat input - this is guaranteed to work in Streamlit
-    _user_input = st.chat_input('Ask about a stock or market...', key='sage_chat_input')
-    if _user_input:
-        st.session_state.sage_pending = _user_input
+    # Display chat history — exactly as the Streamlit docs show
+    for _sm in st.session_state.sage_msgs:
+        with st.chat_message(_sm["role"]):
+            st.markdown(_sm["content"])
+
+    # Show spinner if a reply is being generated (sage_pending was just set)
+    if st.session_state.sage_pending:
+        with st.chat_message("assistant"):
+            with st.spinner("Sage is thinking…"):
+                pass  # actual call happens at top of script on next rerun
+
+    # Native chat input — Streamlit places this at the bottom of the sidebar
+    _sidebar_input = st.chat_input(
+        "Ask about a stock or market…", key="sage_sidebar_input"
+    )
+    if _sidebar_input:
+        # Show user message immediately
+        with st.chat_message("user"):
+            st.markdown(_sidebar_input)
+        # Set pending and rerun so the top-of-script HF call fires
+        st.session_state.sage_pending = _sidebar_input
         st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
 
 
 # Tab pills row
