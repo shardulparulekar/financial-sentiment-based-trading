@@ -1035,9 +1035,9 @@ div[data-testid="stDialog"] [data-testid="stDialogContent"] {
     overflow-y: auto !important;
 }
 /* Invisible real Streamlit button that the FAB iframe triggers */
-.sage-real-btn { position:fixed !important; bottom:5.5rem !important; right:1rem !important;
-    width:80px !important; height:80px !important; opacity:0 !important; z-index:99998 !important; }
-.sage-real-btn button { width:80px !important; height:80px !important; }
+.sage-real-btn { position:fixed !important; bottom:5rem !important; right:0.5rem !important;
+    width:100px !important; height:100px !important; opacity:0 !important; z-index:99998 !important; }
+.sage-real-btn button { width:100px !important; height:100px !important; font-size:0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1084,7 +1084,7 @@ _comp_sage.html(_fab_html, height=100, scrolling=False)
 # Real invisible Streamlit button layered exactly over the FAB visual
 with st.container():
     st.markdown('<div class="sage-real-btn">', unsafe_allow_html=True)
-    if st.button("⚡", key="sage_fab_open", label_visibility="collapsed", help="Open Sage"):
+    if st.button("⚡", key="sage_fab_open", help="Open Sage"):
         st.session_state.sage_open = True
     st.markdown('</div>', unsafe_allow_html=True)
 
