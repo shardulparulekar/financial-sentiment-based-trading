@@ -873,14 +873,9 @@ def generate_sage_response(user_message: str):
 
         if not hf_token:
             return (
-                "⚠️ HuggingFace token missing.
-
-"
-                "Add this to .streamlit/secrets.toml:
-
-"
-                "[huggingface]
-"
+                "⚠️ HuggingFace token missing.\n\n"
+                "Add this to .streamlit/secrets.toml:\n\n"
+                "[huggingface]\n"
                 "token='hf_xxx'"
             )
 
