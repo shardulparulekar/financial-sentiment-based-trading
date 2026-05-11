@@ -1320,11 +1320,19 @@ html,body {{ background:transparent; overflow:hidden; width:100%; height:100%; }
     t.className = 'typing';
     t.innerHTML = '<span></span><span></span><span></span>';
     msgs.appendChild(t); scroll2b();
+    // Write into Streamlit's hidden bridge input in the parent document
     setTimeout(function() {{
-      // Navigate parent to same URL + sage_msg param — triggers Streamlit rerun
-      var url = new URL(window.parent.location.href);
-      url.searchParams.set('sage_msg', text);
-      window.parent.location.href = url.toString();
+      try {{
+        var pd = window.parent.document;
+        // Find the hidden bridge input by its aria-label
+        var bridge = pd.querySelector('input[aria-label="sage_bridge"]');
+        if (bridge) {{
+          var nativeInput = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value');
+          nativeInput.set.call(bridge, text);
+          bridge.dispatchEvent(new window.parent.Event('input', {{ bubbles: true }}));
+          bridge.dispatchEvent(new window.parent.Event('change', {{ bubbles: true }}));
+        }}
+      }} catch(e) {{ console.error('sage bridge error:', e); }}
     }}, 200);
   }}
 
@@ -1345,11 +1353,38 @@ body.sage-open .block-container {
     padding-right: 330px !important;
     transition: padding-right 0.28s cubic-bezier(.4,0,.2,1) !important;
 }
+/* Hide the bridge input completely */
+[data-testid="stTextInput"].sage-bridge-input {
+    position: fixed !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    top: -9999px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-_comp_sage.html(_sage_widget, height=80, scrolling=False)
+# Hidden bridge: the iframe JS writes into this input to trigger a Python rerun
+_sage_bridge_container = st.container()
+with _sage_bridge_container:
+    _sage_bridge_val = st.text_input(
+        "sage_bridge",
+        key="sage_input_bridge",
+        label_visibility="hidden",
+    )
+st.markdown('<style>[data-testid="stTextInput"]:has(input[aria-label="sage_bridge"]) { position:fixed!important; top:-9999px!important; opacity:0!important; pointer-events:none!important; }</style>', unsafe_allow_html=True)
 
+# If the bridge received a new message from the iframe, process it
+if _sage_bridge_val and _sage_bridge_val.strip():
+    if not st.session_state.sage_pending:
+        st.session_state.sage_pending = _sage_bridge_val.strip()
+        # Clear the bridge so it doesn't re-fire
+        st.session_state.sage_input_bridge = ""
+        st.rerun()
+
+_comp_sage.html(_sage_widget, height=80, scrolling=False)
 
 
 
