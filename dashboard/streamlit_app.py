@@ -834,7 +834,7 @@ _nav_html = (
 )
 # Insert emoji after building string (avoids encoding issues in Python 3.14)
 _nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
-st.iframe(_nav_html, height=42, scrolling=False)
+components.html(_nav_html, height=42, scrolling=False)
 
 # ── Global Sage assistant (fixed top-right, persists across all tabs) ─────────
 if "sage_pending" not in st.session_state:
