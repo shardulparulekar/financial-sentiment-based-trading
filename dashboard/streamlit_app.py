@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
@@ -782,9 +782,10 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Nav bar + live clock
-# Nav bar — pure st.markdown (no components.html, no JS, Streamlit Cloud safe)
-_now_utc = datetime.utcnow()
-_days  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+# Nav bar — pure st.markdown (no components.html needed; clock shows time at last rerun)
+import datetime as _dt
+_now_utc = _dt.datetime.now(_dt.timezone.utc)
+_days  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 _mons  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 _clock_str = f"{_days[_now_utc.weekday()]} {_now_utc.day} {_mons[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC"
 st.markdown(f"""
