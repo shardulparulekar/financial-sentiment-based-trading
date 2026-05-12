@@ -48,7 +48,7 @@ st.markdown("""
         padding-top: 0.25rem !important;
         max-width: 1200px !important;
     }
-    /* Collapse components.html iframe wrappers to avoid layout gaps */
+    /* Collapse components.html iframe wrappers — avoid layout gaps */
     div[data-testid="stCustomComponentV1"] {
         margin: 0 !important;
         padding: 0 !important;
@@ -834,7 +834,7 @@ _nav_html = (
 )
 # Insert emoji after building string (avoids encoding issues in Python 3.14)
 _nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
-components.html(_nav_html, height=42, scrolling=False)
+st.iframe(_nav_html, height=42, scrolling=False)
 
 # ── Global Sage assistant (fixed top-right, persists across all tabs) ─────────
 if "sage_pending" not in st.session_state:
@@ -1078,94 +1078,53 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdzYmcnIGN4PSc1MCUnIGN5PSc1MCUnIHI9JzUwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nJTIzMDgyMDQwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPSclMjMwNTBmMWYnLz48L3JhZGlhbEdyYWRpZW50PjxmaWx0ZXIgaWQ9J3NnbG93JyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYmx1cicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzEnIG9wYWNpdHk9JzAuMycvPjxwb2x5bGluZSBwb2ludHM9JzYsMzggMTIsMzggMTUsMjYgMTguNSw1MCAyMiwyOCAyNS41LDQ0IDI5LDIzIDMyLjUsNDcgMzYsMzAgMzksNDIgNDIsMzggNDgsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzMzhiZGY4JyBzdHJva2Utd2lkdGg9JzInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzc2dsb3cpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nMycgZmlsbD0nJTIzMzhiZGY4JyBmaWx0ZXI9J3VybCglMjNzZ2xvdyknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSc2JyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuMTInLz48dGV4dCB4PSczNicgeT0nNjInIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOScgZm9udC13ZWlnaHQ9JzcwMCcgbGV0dGVyLXNwYWNpbmc9JzMnIGZpbGw9JyUyMzM4YmRmOCcgb3BhY2l0eT0nMC45Jz5TQUdFPC90ZXh0Pjwvc3ZnPg=="
+
 # Track open state
 if 'sage_open' not in st.session_state:
     st.session_state.sage_open = False
 
-# Animated FAB button — using st.components for the visual,
-# with a real Streamlit button underneath for the click
-import streamlit.components.v1 as _comp_sage
-
-_fab_html = """<!DOCTYPE html><html><head><style>
-*{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:transparent;overflow:visible;width:100%;height:100%;}
-#fab{
-  position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:18px;
-  border:1.5px solid rgba(56,189,248,0.55);
-  background:linear-gradient(145deg,#082040,#050f1f);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  box-shadow:0 4px 24px rgba(56,189,248,0.35);
-  pointer-events:none;
-}
-#fab svg{width:52px;height:28px;overflow:visible;}
-#fab polyline{fill:none;stroke:#38bdf8;stroke-width:2;stroke-linecap:round;
-  stroke-dasharray:120;stroke-dashoffset:120;
-  animation:draw 2.4s ease-in-out infinite;
-  filter:drop-shadow(0 0 3px rgba(56,189,248,.8));}
-@keyframes draw{0%{stroke-dashoffset:120;opacity:.3}40%{stroke-dashoffset:0;opacity:1}
-  70%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:-120;opacity:.3}}
-.lbl{font-family:monospace;font-size:9px;font-weight:700;letter-spacing:3px;color:#38bdf8;
-  text-shadow:0 0 8px rgba(56,189,248,.7);}
-#ring{position:fixed;bottom:8px;right:8px;width:72px;height:72px;border-radius:20px;
-  border:2px solid rgba(56,189,248,.4);animation:pulse 3s ease-out infinite;pointer-events:none;}
-@keyframes pulse{0%{opacity:.7;transform:scale(1)}70%{opacity:0;transform:scale(1.28)}100%{opacity:0;transform:scale(1.28)}}
-</style></head><body>
-<div id="ring"></div>
-<div id="fab">
-  <svg viewBox="0 0 52 28"><polyline points="0,14 8,14 11,4 14.5,24 18,6 21.5,20 25,2 28.5,22 32,10 35,18 38,14 52,14"/></svg>
-  <span class="lbl">SAGE</span>
-</div>
-<script>
-(function(){
-  var fe=window.frameElement;
-  if(fe){
-    fe.style.cssText='position:fixed!important;bottom:4.5rem!important;right:0.5rem!important;width:90px!important;height:90px!important;border:none!important;background:transparent!important;z-index:99997!important;overflow:visible!important;pointer-events:none!important;';
-  }
-})();
-</script>
-</body></html>"""
-
-_comp_sage.html(_fab_html, height=0, scrolling=False)
-
-# Hide the iframe's Streamlit wrapper so it takes zero space
+# ── SAGE FAB — the button IS the visual. No iframe, no z-index tricks. ────────
+# Pure st.button styled with CSS background-image to show the SAGE icon.
+# This is the only reliable way to get a clickable fixed button in Streamlit.
 st.markdown("""
 <style>
-/* Collapse the FAB iframe wrapper — the iframe positions itself fixed via JS */
-iframe[height="0"] {
-    display: none !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-div:has(> iframe[height="0"]) {
-    display: none !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-/* Position SAGE toggle button by its key attribute */
-div[data-testid="stMainBlockContainer"] button[data-testid="baseButton-secondary"][key="sage_toggle_btn"],
-div[data-testid="stMainBlockContainer"] div[data-testid="stButton"]:has(button[key="sage_toggle_btn"]),
-div[data-testid="stMainBlockContainer"] div[data-testid="stButton"]:has(button[key="sage_toggle_btn"]) button {
+div[data-testid="stMainBlockContainer"]
+  div[data-testid="stButton"]:has(button[key="sage_fab_btn"]),
+div[data-testid="stMainBlockContainer"]
+  div[data-testid="stButton"]:has(button[key="sage_fab_btn"]) button {
     position: fixed !important;
     bottom: 4.5rem !important;
     right: 0.5rem !important;
-    width: 90px !important;
-    height: 90px !important;
-    opacity: 0 !important;
-    z-index: 99998 !important;
-    cursor: pointer !important;
-    pointer-events: auto !important;
-    border-radius: 18px !important;
-    border: none !important;
-    background: transparent !important;
+    width: 80px !important;
+    height: 80px !important;
+    z-index: 99999 !important;
     margin: 0 !important;
     padding: 0 !important;
 }
+div[data-testid="stMainBlockContainer"]
+  div[data-testid="stButton"]:has(button[key="sage_fab_btn"]) button {
+    border-radius: 18px !important;
+    border: 1.5px solid rgba(56,189,248,0.55) !important;
+    background-image: url('SAGE_URI_PLACEHOLDER') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-color: #050f1f !important;
+    box-shadow: 0 4px 20px rgba(56,189,248,0.35), 0 8px 32px rgba(0,0,0,0.6) !important;
+    cursor: pointer !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    color: transparent !important;
+    font-size: 0 !important;
+}
+div[data-testid="stMainBlockContainer"]
+  div[data-testid="stButton"]:has(button[key="sage_fab_btn"]) button:hover {
+    transform: scale(1.07) translateY(-2px) !important;
+    box-shadow: 0 6px 28px rgba(56,189,248,0.55), 0 8px 32px rgba(0,0,0,0.7) !important;
+}
 </style>
-""", unsafe_allow_html=True)
+""".replace("SAGE_URI_PLACEHOLDER", _SAGE_URI), unsafe_allow_html=True)
 
-if st.button("SAGE", key="sage_toggle_btn"):
+if st.button("\u200b", key="sage_fab_btn"):
     st.session_state.sage_open = not st.session_state.sage_open
     st.rerun()
 
