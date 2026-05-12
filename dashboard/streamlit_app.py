@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
@@ -782,26 +782,53 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Nav bar + live clock
-# Nav bar — pure st.markdown (no components.html needed; clock shows time at last rerun)
-import datetime as _dt
-_now_utc = _dt.datetime.now(_dt.timezone.utc)
-_days  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-_mons  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-_clock_str = f"{_days[_now_utc.weekday()]} {_now_utc.day} {_mons[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC"
-st.markdown(f"""
-<div style="display:flex;align-items:center;justify-content:space-between;
-            padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;
-            font-family:'Inter',system-ui,sans-serif;margin-bottom:0.5rem;">
-  <span>
-    <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:600;
-                 color:#3b82f6;letter-spacing:-0.01em;">📡 Sentiment Signal</span>
-    <span style="font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;">
-      FinBERT-powered global trading signals</span>
-  </span>
-  <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;
-               color:#64748b;letter-spacing:0.02em;">🕐 {_clock_str}</span>
-</div>
-""", unsafe_allow_html=True)
+# Strategy: render the entire nav bar including clock inside components.html
+# so the script runs. height=38 makes it visible. Negative margin pulls it flush.
+import streamlit.components.v1 as components
+
+_nav_html = (
+    "<style>"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{background:#080c14;font-family:'Inter',system-ui,sans-serif;}"
+    ".nav{"
+    "display:flex;align-items:center;justify-content:space-between;"
+    "padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;"
+    "}"
+    ".logo{font-family:'JetBrains Mono','DM Mono',monospace;font-size:1rem;font-weight:600;color:#3b82f6;letter-spacing:-0.01em;}"
+    ".sub{font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;}"
+    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#64748b;letter-spacing:0.02em;}"
+    ".dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:middle;}"
+    "</style>"
+    "<div class='nav'>"
+    "<span><span class='logo'>[ICON] Sentiment Signal</span>"
+    "<span class='sub'>FinBERT-powered global trading signals</span></span>"
+    "<span class='clk' id='clk'>--</span>"
+    "</div>"
+    "<script>"
+    "(function(){"
+    "var D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];"
+    "var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
+    "function tick(){"
+    "var el=document.getElementById('clk');"
+    "if(!el)return;"
+    "var n=new Date();"
+    "var hh=String(n.getHours()).padStart(2,'0');"
+    "var mm=String(n.getMinutes()).padStart(2,'0');"
+    "var tz='Local';"
+    "try{tz=new Intl.DateTimeFormat('en',{timeZoneName:'short'})"
+    ".formatToParts(n)"
+    ".find(function(p){return p.type==='timeZoneName';}).value;"
+    "}catch(e){}"
+    "el.textContent='[CLK] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
+    "+'  '+hh+':'+mm+' '+tz;"
+    "}"
+    "tick();setInterval(tick,1000);"
+    "})();"
+    "</script>"
+)
+# Insert emoji after building string (avoids encoding issues in Python 3.14)
+_nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
+components.html(_nav_html, height=42, scrolling=False)
 
 # ── Global Sage assistant (fixed top-right, persists across all tabs) ─────────
 if "sage_pending" not in st.session_state:
@@ -986,6 +1013,8 @@ if st.session_state.sage_pending:
 # -- Sage: right-side panel using st.dialog (native Streamlit overlay, no JS tricks) --
 # st.dialog is fully supported in Streamlit 1.37+ and works on Streamlit Cloud.
 # The FAB button opens it; the dialog renders as a modal overlay on the right.
+
+import streamlit.components.v1 as _comp_sage
 
 # ── SAGE: right sidebar chat (native Streamlit — reliable, persistent) ────────
 # Using st.sidebar which is already fixed-positioned, scrollable independently,
