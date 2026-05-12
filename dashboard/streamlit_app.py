@@ -45,8 +45,14 @@ st.markdown("""
         background-color: #080c14 !important;
     }
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0.25rem !important;
         max-width: 1200px !important;
+    }
+    /* Collapse components.html iframe wrappers to avoid layout gaps */
+    div[data-testid="stCustomComponentV1"] {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 0 !important;
     }
 
     /* ── Hide Streamlit chrome ────────────────────────────────────────────── */
@@ -1037,17 +1043,22 @@ st.markdown("""
     background: #080f1e !important;
     padding-top: 0.75rem !important;
 }
-/* Hide ALL sidebar collapse/expand controls */
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="stSidebarNavItems"],
-button[data-testid="baseButton-headerNoPadding"],
-[data-testid="collapsedControl"] {
-    display: none !important;
-}
-/* Sidebar overlays — does NOT push main content */
+/* Hide default sidebar nav toggle arrow on left — we have our own FAB */
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+/* When sidebar open, push main content left */
 [data-testid="stSidebar"][aria-expanded="true"] ~ [data-testid="stMainBlockContainer"] {
-    margin-right: 0 !important;
-    transition: none !important;
+    margin-right: 320px !important;
+    transition: margin-right 0.3s ease !important;
+}
+/* Animated FAB — fixed bottom right, always visible */
+.sage-fab-wrapper {
+    position: fixed !important;
+    bottom: 4.5rem !important;
+    right: 0.5rem !important;
+    width: 90px !important;
+    height: 90px !important;
+    z-index: 99999 !important;
+    cursor: pointer !important;
 }
 /* Style chat input inside sidebar */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
@@ -1114,21 +1125,28 @@ html,body{background:transparent;overflow:visible;width:100%;height:100%;}
 </script>
 </body></html>"""
 
-_comp_sage.html(_fab_html, height=90, scrolling=False)
+_comp_sage.html(_fab_html, height=0, scrolling=False)
 
-# Invisible clickable button overlaid on the FAB
-# Target by the Streamlit-generated element key selector
+# Hide the iframe's Streamlit wrapper so it takes zero space
 st.markdown("""
 <style>
-/* Target by key — Streamlit sets data-testid on the wrapper div */
-div:has(> button[data-testid="baseButton-secondary"]) {
-    display: inline !important;
+/* Collapse the FAB iframe wrapper — the iframe positions itself fixed via JS */
+iframe[height="0"] {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
-/* Position the actual button element over the FAB using key-based selector */
-button[data-testid="baseButton-secondary"][aria-label="Toggle SAGE"],
-div[data-testid="stMainBlockContainer"] button[aria-label="Toggle SAGE"],
-div[data-testid="stMainBlockContainer"] button[title="Toggle SAGE"],
-div[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button {
+div:has(> iframe[height="0"]) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+/* Position SAGE toggle button by its key attribute */
+div[data-testid="stMainBlockContainer"] button[data-testid="baseButton-secondary"][key="sage_toggle_btn"],
+div[data-testid="stMainBlockContainer"] div[data-testid="stButton"]:has(button[key="sage_toggle_btn"]),
+div[data-testid="stMainBlockContainer"] div[data-testid="stButton"]:has(button[key="sage_toggle_btn"]) button {
     position: fixed !important;
     bottom: 4.5rem !important;
     right: 0.5rem !important;
@@ -1137,27 +1155,17 @@ div[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button {
     opacity: 0 !important;
     z-index: 99998 !important;
     cursor: pointer !important;
-    padding: 0 !important;
+    pointer-events: auto !important;
+    border-radius: 18px !important;
     border: none !important;
     background: transparent !important;
-    font-size: 0 !important;
-    color: transparent !important;
-}
-/* Prevent the button's parent div from creating layout space */
-div[data-testid="stMainBlockContainer"] div[data-testid="stButton"] {
-    position: fixed !important;
-    bottom: 4.5rem !important;
-    right: 0.5rem !important;
-    width: 90px !important;
-    height: 90px !important;
-    z-index: 99998 !important;
-    opacity: 0 !important;
-    pointer-events: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-if st.button("", key="sage_toggle_btn", help="Toggle SAGE", use_container_width=False):
+if st.button("SAGE", key="sage_toggle_btn"):
     st.session_state.sage_open = not st.session_state.sage_open
     st.rerun()
 
