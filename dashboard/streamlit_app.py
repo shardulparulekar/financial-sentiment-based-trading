@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
@@ -782,60 +782,34 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Nav bar + live clock
-# Strategy: render the entire nav bar including clock inside components.html
-# so the script runs. height=38 makes it visible. Negative margin pulls it flush.
-import streamlit.components.v1 as components
-
-_nav_html = (
-    "<style>"
-    "*{box-sizing:border-box;margin:0;padding:0;}"
-    "body{background:#080c14;font-family:'Inter',system-ui,sans-serif;}"
-    ".nav{"
-    "display:flex;align-items:center;justify-content:space-between;"
-    "padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;"
-    "}"
-    ".logo{font-family:'JetBrains Mono','DM Mono',monospace;font-size:1rem;font-weight:600;color:#3b82f6;letter-spacing:-0.01em;}"
-    ".sub{font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;}"
-    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#64748b;letter-spacing:0.02em;}"
-    ".dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:middle;}"
-    "</style>"
-    "<div class='nav'>"
-    "<span><span class='logo'>[ICON] Sentiment Signal</span>"
-    "<span class='sub'>FinBERT-powered global trading signals</span></span>"
-    "<span class='clk' id='clk'>--</span>"
-    "</div>"
-    "<script>"
-    "(function(){"
-    "var D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];"
-    "var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
-    "function tick(){"
-    "var el=document.getElementById('clk');"
-    "if(!el)return;"
-    "var n=new Date();"
-    "var hh=String(n.getHours()).padStart(2,'0');"
-    "var mm=String(n.getMinutes()).padStart(2,'0');"
-    "var tz='Local';"
-    "try{tz=new Intl.DateTimeFormat('en',{timeZoneName:'short'})"
-    ".formatToParts(n)"
-    ".find(function(p){return p.type==='timeZoneName';}).value;"
-    "}catch(e){}"
-    "el.textContent='[CLK] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
-    "+'  '+hh+':'+mm+' '+tz;"
-    "}"
-    "tick();setInterval(tick,1000);"
-    "})();"
-    "</script>"
-)
-# Insert emoji after building string (avoids encoding issues in Python 3.14)
-_nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
-components.html(_nav_html, height=42, scrolling=False)
+# Nav bar — pure st.markdown (no components.html; Streamlit Cloud safe)
+import datetime as _dt
+_now_utc   = _dt.datetime.now(_dt.timezone.utc)
+_days_nav  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+_mons_nav  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+_clock_str = (f"{_days_nav[_now_utc.weekday()]} {_now_utc.day} "
+              f"{_mons_nav[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC")
+st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;
+            font-family:'Inter',system-ui,sans-serif;margin-bottom:0.5rem;">
+  <span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:600;
+                 color:#3b82f6;letter-spacing:-0.01em;">📡 Sentiment Signal</span>
+    <span style="font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;">
+      FinBERT-powered global trading signals</span>
+  </span>
+  <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;
+               color:#64748b;letter-spacing:0.02em;">🕐 {_clock_str}</span>
+</div>
+""", unsafe_allow_html=True)
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
 
 with pill_cols[0]:
     if st.button("🏠 Home", type="secondary" if st.session_state.active_tab != "home" else "primary",
-                 use_container_width=True):
+                 width='stretch'):
         st.session_state.active_tab = "home"
         # Clear signal cache so the home page re-fetches updated_at from
         # Supabase — by the time the user clicks Home the pipeline has finished
@@ -852,12 +826,12 @@ for i, tab in enumerate(st.session_state.open_tickers):
                 tab["display"],
                 key=f"tab_btn_{tab['full']}",
                 type="primary" if is_active else "secondary",
-                use_container_width=True,
+                width='stretch',
             ):
                 st.session_state.active_tab = tab["full"]
                 st.rerun()
         with col_x:
-            if st.button("✕", key=f"close_{tab['full']}", use_container_width=True):
+            if st.button("✕", key=f"close_{tab['full']}", width='stretch'):
                 close_ticker_tab(tab["full"])
 
 st.divider()
@@ -927,7 +901,7 @@ if st.session_state.active_tab == "home":
             )
         with f5:
             st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("Open →", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Open →", type="primary", width='stretch')
 
     if submitted:
         if market == "— select —":
@@ -1082,7 +1056,7 @@ if st.session_state.active_tab == "home":
                         if st.button(
                             f"Open {card['display_t']} →",
                             key=f"top_sig_{card['ticker']}",
-                            use_container_width=True,
+                            width='stretch',
                             type="secondary",
                         ):
                             load_top_signals.clear()
@@ -1112,7 +1086,7 @@ if st.session_state.active_tab == "home":
                 if st.button(
                     toggle_label,
                     key="signals_toggle",
-                    use_container_width=True,
+                    width='stretch',
                     type="secondary",
                 ):
                     st.session_state.signals_expanded = not st.session_state.signals_expanded
@@ -1204,7 +1178,7 @@ if st.session_state.active_tab == "home":
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                st.plotly_chart(fig_spark, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig_spark, width='stretch', config={"displayModeBar": False})
 
             except Exception:
                 st.markdown(f"""
@@ -1311,7 +1285,7 @@ if st.session_state.active_tab == "home":
             key="global_news_search",
         )
     with btn_col:
-        do_search = st.button("Search", use_container_width=True)
+        do_search = st.button("Search", width='stretch')
 
     if news_query.strip() and (do_search or news_query):
         with st.spinner(f"Searching news for '{news_query}'…"):
@@ -1629,7 +1603,7 @@ else:
             font=dict(color="#e5e7eb"), hovermode="x unified", legend=dict(orientation="h"))
         fig.update_yaxes(gridcolor="#1e2130", zeroline=False)
         fig.update_xaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         if not has_s:
             st.info("No news data found — price chart only.")
         st.caption(f"Prices in **{currency_name}** ({currency_sym.strip()})")
@@ -1654,7 +1628,7 @@ else:
             font=dict(color="#e5e7eb"), hovermode="x unified", legend=dict(orientation="h"))
         fig2.update_yaxes(gridcolor="#1e2130")
         fig2.update_xaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
         st.caption(f"Currency: **{currency_name}** · Transaction cost: 10bps · Starting: {currency_sym}10,000")
 
     with atab3:
@@ -1691,7 +1665,7 @@ else:
                     font=dict(color="#e5e7eb"), showlegend=False, coloraxis_showscale=False, margin=dict(l=0))
                 fig3.update_xaxes(gridcolor="#1e2130")
                 fig3.update_yaxes(gridcolor="#1e2130")
-                st.plotly_chart(fig3, use_container_width=True)
+                st.plotly_chart(fig3, width='stretch')
         with col_b:
             st.markdown("#### Walk-forward results")
             res = data["results"]
@@ -1699,13 +1673,13 @@ else:
                 {"Model": n, "Accuracy": f"{s['accuracy_mean']:.3f}±{s['accuracy_std']:.3f}",
                  "F1": f"{s['f1_mean']:.3f}±{s['f1_std']:.3f}"}
                 for n, s in res["summary"].items()
-            ]), hide_index=True, use_container_width=True)
+            ]), hide_index=True, width='stretch')
             st.markdown("#### Fold detail")
             st.dataframe(pd.DataFrame([
                 {"Model": n, "Fold": f["fold"], "Acc": round(f["accuracy"],3),
                  "F1": round(f["f1"],3), "Train": f["train_rows"], "Test": f["test_rows"]}
                 for n, folds in res["fold_details"].items() for f in folds
-            ]), hide_index=True, use_container_width=True)
+            ]), hide_index=True, width='stretch')
 
     with atab4:
         h_search_col, h_mode_col = st.columns([4, 1])
@@ -1875,7 +1849,7 @@ else:
                     xaxis=dict(gridcolor="#1e2130"),
                     margin=dict(l=0, r=0, t=40, b=0),
                 )
-                st.plotly_chart(fig_acc, use_container_width=True)
+                st.plotly_chart(fig_acc, width='stretch')
 
                 # Prediction history table
                 st.markdown("#### Recent predictions")
@@ -1886,7 +1860,7 @@ else:
                 display_perf["correct"]    = display_perf["correct"].map({True:"✓", False:"✗"})
                 display_perf["confidence"] = display_perf["confidence"].apply(lambda x: f"{x:.1%}")
                 display_perf["sentiment"]  = display_perf["sentiment"].apply(lambda x: f"{x:+.3f}")
-                st.dataframe(display_perf.head(20), hide_index=True, use_container_width=True)
+                st.dataframe(display_perf.head(20), hide_index=True, width='stretch')
 
             st.divider()
 
@@ -1936,10 +1910,11 @@ st.markdown("""
 button[data-testid="baseButton-headerNoPadding"] {
     display: none !important;
 }
-/* When sidebar is collapsed, make sure page is NOT shifted */
+/* Sidebar always stays at full width — no collapse to zero */
 [data-testid="stSidebar"][aria-expanded="false"] {
-    width: 0 !important;
-    min-width: 0 !important;
+    width: 280px !important;
+    min-width: 280px !important;
+    transform: none !important;
 }
 /* Main content — no margin offset, sidebar overlays */
 [data-testid="stMain"] {
@@ -2146,7 +2121,7 @@ with st.sidebar:
                     "Which markets are bearish?",
                     "Explain the top BUY signal",
                     "High-confidence SELL signals?"]:
-            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", use_container_width=True, type="secondary"):
+            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
                 st.session_state.sage_pending = _sg
                 st.rerun()
 
@@ -2158,7 +2133,7 @@ with st.sidebar:
         st.divider()
         for _ft2,(_m2,_e2,_d2,_c2) in st.session_state.sage_tickers.items():
             if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}",
-                         use_container_width=True, type="primary"):
+                         width='stretch', type="primary"):
                 load_top_signals.clear()
                 add_ticker_tab(_ft2,_d2,_c2,_m2,_e2)
 
