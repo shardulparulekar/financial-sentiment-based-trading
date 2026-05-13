@@ -1936,8 +1936,12 @@ st.markdown("""
 button[data-testid="baseButton-headerNoPadding"] {
     display: none !important;
 }
-/* Do NOT add margin-right to main — let sidebar overlay on right.
-   This prevents content truncation on any screen size. */
+/* When sidebar is collapsed, make sure page is NOT shifted */
+[data-testid="stSidebar"][aria-expanded="false"] {
+    width: 0 !important;
+    min-width: 0 !important;
+}
+/* Main content — no margin offset, sidebar overlays */
 [data-testid="stMain"] {
     overflow-x: hidden !important;
 }
