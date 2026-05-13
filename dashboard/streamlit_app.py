@@ -1907,19 +1907,18 @@ else:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SAGE — Persistent right-side chat assistant
-# Rendered via st.sidebar so it's always visible on all tabs,
-# has its own independent scroll, and never overlaps page content.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Sidebar CSS — move to right, dark theme, no collapse arrow ────────────────
+# Force sidebar to always be expanded on load
 st.markdown("""
 <style>
+/* Move sidebar to the RIGHT */
 [data-testid="stSidebar"] {
     left: auto !important;
     right: 0 !important;
-    width: 320px !important;
-    min-width: 320px !important;
-    max-width: 320px !important;
+    width: 280px !important;
+    min-width: 280px !important;
+    max-width: 280px !important;
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.18) !important;
     border-right: none !important;
@@ -1927,51 +1926,50 @@ st.markdown("""
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
-    padding-left: 0.75rem !important;
-    padding-right: 0.75rem !important;
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
+    overflow-y: auto !important;
 }
-/* Keep sidebar always open — hide Streamlit's own toggle */
+/* Hide Streamlit's sidebar collapse/expand arrow entirely */
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
+[data-testid="collapsedControl"],
+button[data-testid="baseButton-headerNoPadding"] {
     display: none !important;
 }
-/* Prevent main content overlapping sidebar */
-[data-testid="stMainBlockContainer"] {
-    margin-right: 326px !important;
+/* Do NOT add margin-right to main — let sidebar overlay on right.
+   This prevents content truncation on any screen size. */
+[data-testid="stMain"] {
+    overflow-x: hidden !important;
 }
-/* Chat input styling */
+/* Chat input area */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
     color: #f1f5f9 !important;
-    font-size: 0.82rem !important;
+    font-size: 0.8rem !important;
     border-radius: 10px !important;
 }
 [data-testid="stSidebar"] [data-testid="stChatInput"] button {
     background: rgba(56,189,248,0.15) !important;
     border: 1px solid rgba(56,189,248,0.3) !important;
     color: #38bdf8 !important;
-    border-radius: 8px !important;
 }
-/* Chat message styling */
-[data-testid="stSidebar"] [data-testid="stChatMessage"] {
-    background: transparent !important;
-    padding: 0.15rem 0 !important;
-}
+/* Chat messages — hide avatars, reduce padding */
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"] {
     display: none !important;
 }
+[data-testid="stSidebar"] [data-testid="stChatMessage"] {
+    background: transparent !important;
+    padding: 0.1rem 0 !important;
+}
 [data-testid="stSidebar"] [data-testid="stChatMessage"] p {
-    font-size: 0.8rem !important;
+    font-size: 0.79rem !important;
     line-height: 1.5 !important;
 }
-/* User message bubble */
-[data-testid="stSidebar"] [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
-    background: rgba(30,58,95,0.4) !important;
-    border-radius: 10px !important;
-    padding: 0.4rem 0.6rem !important;
-    margin: 0.1rem 0 !important;
+/* Buttons inside sidebar */
+[data-testid="stSidebar"] button {
+    font-size: 0.75rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1981,20 +1979,18 @@ if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
 if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
 if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
 
-# ── Ticker lookup table ───────────────────────────────────────────────────────
+# ── Ticker lookup ─────────────────────────────────────────────────────────────
 _SK: dict = {}
 for _m, _cfg in MARKET_CONFIG.items():
     _sfx = _cfg.get("suffix", "")
-    for _t, _n in zip(
-            _cfg["tickers"] + _cfg.get("us_adrs", []),
-            _cfg["names"]   + _cfg.get("adr_names", [])):
+    for _t, _n in zip(_cfg["tickers"] + _cfg.get("us_adrs", []),
+                      _cfg["names"]   + _cfg.get("adr_names", [])):
         _f = _t + _sfx if _sfx and not _t.endswith(_sfx) else _t
         _SK[_f.upper()] = (_m, None, _t, _n)
 for _ex, _ecfg in EU_EXCHANGES.items():
     _sfx = _ecfg["suffix"]
-    for _t, _n in zip(
-            _ecfg["tickers"] + _ecfg.get("us_exceptions", []),
-            _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
+    for _t, _n in zip(_ecfg["tickers"] + _ecfg.get("us_exceptions", []),
+                      _ecfg["names"]   + _ecfg.get("us_exception_names", [])):
         _f = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
         _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
 
@@ -2006,21 +2002,15 @@ def _sk_find(msg: str) -> list[str]:
             found.append(w)
     return found
 
-def _sage_signal_from_df(ft: str, top_df) -> dict | None:
-    if top_df is None or top_df.empty:
-        return None
-    m = top_df[top_df["ticker"].str.upper() == ft.upper()]
-    if m.empty:
-        return None
+def _sig_from_df(ft, df):
+    if df is None or df.empty: return None
+    m = df[df["ticker"].str.upper() == ft.upper()]
+    if m.empty: return None
     r = m.iloc[0]
-    return {
-        "predicted":  int(r["predicted"]),
-        "confidence": float(r["confidence"]),
-        "sentiment":  float(r["sentiment"]),
-        "updated_at": r["updated_at"],
-    }
+    return {"predicted": int(r["predicted"]), "confidence": float(r["confidence"]),
+            "sentiment": float(r["sentiment"]), "updated_at": r["updated_at"]}
 
-def _sage_live_signal(ft: str, mkt: str, exch) -> dict | None:
+def _live_sig(ft, mkt, exch):
     try:
         from src.data_ingestion      import DataIngestion
         from src.sentiment_model     import SentimentModel
@@ -2029,200 +2019,151 @@ def _sage_live_signal(ft: str, mkt: str, exch) -> dict | None:
         arts = DataIngestion().fetch_news(ft, market=mkt, exchange=exch)
         sc   = SentimentModel().score_articles(arts) if arts else []
         fe   = FeatureEngineer().build_features(sc)  if sc   else None
-        if fe is None or fe.empty:
-            return None
-        s   = float(fe.iloc[-1].get("mean_score", 0))
-        now = datetime.now(_ptz.utc)
-        return {
-            "predicted":  1 if s > 0 else -1,
-            "confidence": min(abs(s) * 2 + 0.5, 0.99),
-            "sentiment":  s,
-            "updated_at": now,
-            "live":       True,
-        }
+        if fe is None or fe.empty: return None
+        s = float(fe.iloc[-1].get("mean_score", 0))
+        return {"predicted": 1 if s>0 else -1, "confidence": min(abs(s)*2+0.5,0.99),
+                "sentiment": s, "updated_at": datetime.now(__import__("pytz").utc), "live": True}
     except Exception:
         return None
 
-def _sage_hf(messages: list[dict], context: str) -> str:
+def _hf_call(msgs, ctx):
     try:
         import requests as _rq, os as _os
-        try:
-            hf = st.secrets["huggingface"]["token"]
-        except Exception:
-            hf = _os.getenv("HUGGINGFACE_TOKEN", "")
-        if not hf:
-            return ("⚠️ HuggingFace token not set. "
-                    "Add `[huggingface]\ntoken = \"hf_xxx\"` to Streamlit secrets.")
-        system = (
-            "You are Sage, a concise financial signal assistant for Sentiment Signal, "
-            "a FinBERT-powered trading app. Answer in 2-3 sentences. "
-            "Never give direct buy/sell investment advice — explain signals and data only.\n\n"
-            f"Current context:\n{context}"
-        )
-        prompt = (
-            f"<|begin_of_text|>"
-            f"<|start_header_id|>system<|end_header_id|>\n{system}<|eot_id|>"
-        )
-        for msg in messages[-6:]:
-            role = "user" if msg["role"] == "user" else "assistant"
-            # Strip HTML from spotlight messages before sending to model
-            c = msg["content"]
-            if "<div" in c or "<a " in c:
-                c = "[signal card shown to user]"
-            prompt += f"<|start_header_id|>{role}<|end_header_id|>\n{c}<|eot_id|>"
+        try:    tok = st.secrets["huggingface"]["token"]
+        except Exception: tok = _os.getenv("HUGGINGFACE_TOKEN","")
+        if not tok:
+            return "⚠️ No HuggingFace token. Add [huggingface]\ntoken=\'hf_xxx\' to Streamlit secrets."
+        sys_p = ("You are Sage, a concise financial assistant for Sentiment Signal. "
+                 "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
+                 f"Context:\n{ctx}")
+        prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{sys_p}<|eot_id|>"
+        for m in msgs[-6:]:
+            r = "user" if m["role"]=="user" else "assistant"
+            c = m["content"] if "<div" not in m["content"] else "[signal shown]"
+            prompt += f"<|start_header_id|>{r}<|end_header_id|>\n{c}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
-
         resp = _rq.post(
             "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
-            headers={"Authorization": f"Bearer {hf}"},
-            json={
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 160,
-                    "temperature":    0.4,
-                    "return_full_text": False,
-                    "stop": ["<|eot_id|>", "<|start_header_id|>"],
-                },
-            },
-            timeout=30,
-        )
+            headers={"Authorization": f"Bearer {tok}"},
+            json={"inputs": prompt, "parameters": {
+                "max_new_tokens": 160, "temperature": 0.4,
+                "return_full_text": False,
+                "stop": ["<|eot_id|>","<|start_header_id|>"]}},
+            timeout=30)
         if resp.status_code == 200:
             data = resp.json()
-            text = (data[0].get("generated_text", "") if isinstance(data, list) and data else "").strip()
-            for stop in ["<|eot_id|>", "<|start_header_id|>"]:
-                if stop in text:
-                    text = text[:text.index(stop)].strip()
-            return text or "I couldn't generate a response. Please try again."
+            txt = (data[0].get("generated_text","") if isinstance(data,list) and data else "").strip()
+            for s in ["<|eot_id|>","<|start_header_id|>"]:
+                txt = txt[:txt.index(s)].strip() if s in txt else txt
+            return txt or "I couldn't generate a response. Please try again."
         elif resp.status_code == 503:
-            return "Model is warming up (~20s cold start). Please try again shortly."
+            return "Model warming up (~20s). Please try again shortly."
         elif resp.status_code == 404:
-            return "AI model temporarily unavailable. Ticker spotlights still work — just type a ticker symbol."
+            return "AI model temporarily unavailable. Ticker spotlights still work."
         else:
-            return f"Model error ({resp.status_code}). Please try again shortly."
+            return f"Model error ({resp.status_code}). Please try again."
     except Exception as e:
-        return f"Connection error: {e}"
+        return f"Error: {e}"
 
-# ── Process pending message (sent on previous rerun) ─────────────────────────
+# ── Process pending message ───────────────────────────────────────────────────
 if st.session_state.sage_pending:
-    _pending = st.session_state.sage_pending
+    _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
-
     _top  = load_top_signals(n=20)
     _sent = load_market_sentiment()
-    _found = _sk_find(_pending)
+    _hits = _sk_find(_pend)
 
-    if _found:
-        _ft  = _found[0]
-        _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
-        _sig = _sage_signal_from_df(_ft, _top)
+    if _hits:
+        _ft = _hits[0]
+        _mkt, _exch, _dt, _co = _SK.get(_ft, (None,None,_ft,_ft))
+        _sig = _sig_from_df(_ft, _top)
         if not _sig and _mkt:
             with st.spinner(f"Fetching live signal for {_dt}…"):
-                _sig = _sage_live_signal(_ft, _mkt, _exch)
-
+                _sig = _live_sig(_ft, _mkt, _exch)
         if _sig and _mkt:
-            import pytz as _ptz3
-            _now3   = datetime.now(_ptz3.utc)
-            _is_up  = _sig["predicted"] == 1
-            _sc     = _sig["sentiment"]
-            _col    = "#22c55e" if _is_up else "#ef4444"
-            _slbl   = "bullish" if _sc > 0.05 else ("bearish" if _sc < -0.05 else "neutral")
-            _secs   = (_now3 - _sig["updated_at"]).total_seconds()
-            _age    = (f"{int(_secs//60)}m ago" if _secs < 3600
-                       else f"{int(_secs//3600)}h {int((_secs%3600)//60)}m ago")
-            _flag   = (_exch or _mkt or "").split(" ")[0]
-            _live   = " · live" if _sig.get("live") else ""
-            _reply  = (
-                f"**{_flag} {_dt}**  ·  {_co}\n\n"
-                f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} "
-                f"· {_sig['confidence']:.0%} confidence\n\n"
-                f"Sentiment: **{_slbl}** ({_sc:+.3f})\n\n"
-                f"⏱ {_age}{_live}"
-            )
-            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co)
+            import pytz as _ptz2
+            _is_up = _sig["predicted"]==1
+            _s  = _sig["sentiment"]
+            _sl = "bullish" if _s>0.05 else ("bearish" if _s<-0.05 else "neutral")
+            _sc = (_sig["updated_at"]).total_seconds() if hasattr((_sig["updated_at"]),"total_seconds") else (datetime.now(_ptz2.utc)-_sig["updated_at"]).total_seconds()
+            try:
+                _sc = (datetime.now(_ptz2.utc)-_sig["updated_at"]).total_seconds()
+            except Exception:
+                _sc = 0
+            _age = f"{int(_sc//60)}m ago" if _sc<3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+            _flag = (_exch or _mkt or "").split(" ")[0]
+            _live = " · live" if _sig.get("live") else ""
+            _rep = (f"**{_flag} {_dt}** ({_co})\n\n"
+                    f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
+                    f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_live}")
+            st.session_state.sage_tickers[_ft] = (_mkt,_exch,_dt,_co)
         elif _mkt:
-            _reply = (f"I don't have a pre-computed signal for **{_dt}** right now. "
-                      f"Click Open below to run a full live analysis.")
-            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co)
+            _rep = f"No pre-computed signal for **{_dt}**. Click Open below to run a live analysis."
+            st.session_state.sage_tickers[_ft] = (_mkt,_exch,_dt,_co)
         else:
-            _reply = f"**{_ft}** isn't in our tracked ticker list."
+            _rep = f"**{_ft}** isn't in our tracked ticker list."
     else:
-        # Conversational — call HuggingFace
         _ctx = []
         if _top is not None and not _top.empty:
-            _ctx.append("Top signals: " + ", ".join(
+            _ctx.append("Signals: " + ", ".join(
                 f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                for _, r in _top.head(5).iterrows()))
+                for _,r in _top.head(5).iterrows()))
         if _sent:
-            _ctx.append("Market sentiment: " + " | ".join(
+            _ctx.append("Sentiment: " + " | ".join(
                 f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                for mk, d in _sent.items()))
-        _reply = _sage_hf(st.session_state.sage_msgs, "\n".join(_ctx) or "No data available.")
+                for mk,d in _sent.items()))
+        _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
 
-    st.session_state.sage_msgs.append({"role": "user",      "content": _pending})
-    st.session_state.sage_msgs.append({"role": "assistant", "content": _reply})
+    st.session_state.sage_msgs.append({"role":"user",      "content":_pend})
+    st.session_state.sage_msgs.append({"role":"assistant", "content":_rep})
 
 # ── Render sidebar ────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdnJyBjeD0nNTAlJyBjeT0nNTAlJyByPSc1MCUnPjxzdG9wIG9mZnNldD0nMCUnIHN0b3AtY29sb3I9JyUyMzA4MjA0MCcvPjxzdG9wIG9mZnNldD0nMTAwJScgc3RvcC1jb2xvcj0nJTIzMDUwZjFmJy8+PC9yYWRpYWxHcmFkaWVudD48ZmlsdGVyIGlkPSdmJyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScxJyBvcGFjaXR5PScwLjMnLz48cG9seWxpbmUgcG9pbnRzPSc2LDM4IDEyLDM4IDE1LDI2IDE4LjUsNTAgMjIsMjggMjUuNSw0NCAyOSwyMyAzMi41LDQ3IDM2LDMwIDM5LDQyIDQyLDM4IDQ4LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScyLjInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZiknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSczJyBmaWxsPSclMjMzOGJkZjgnIGZpbHRlcj0ndXJsKCUyM2YpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nNicgZmlsbD0nJTIzMzhiZGY4JyBvcGFjaXR5PScwLjEyJy8+PHRleHQgeD0nMzYnIHk9JzYyJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmb250LWZhbWlseT0nbW9ub3NwYWNlJyBmb250LXNpemU9JzknIGZvbnQtd2VpZ2h0PSc3MDAnIGxldHRlci1zcGFjaW5nPSczJyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuOSc+U0FHRTwvdGV4dD48L3N2Zz4="
 
 with st.sidebar:
-
-    # Header
     st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.6rem;
-            padding:0.65rem 0 0.6rem;
-            margin:0 -0.75rem 0.5rem;
-            padding-left:0.75rem;
+<div style="display:flex;align-items:center;gap:0.55rem;
+            padding:0.6rem 0 0.55rem;
+            margin:0 -0.6rem 0.4rem;padding-left:0.6rem;
             border-bottom:1px solid rgba(56,189,248,0.15);
             background:linear-gradient(135deg,#0c1f3d,#080f1e);">
-  <img src="{_SAGE_URI}" style="width:34px;height:34px;border-radius:10px;flex-shrink:0"/>
+  <img src="{_SAGE_URI}" style="width:32px;height:32px;border-radius:9px;flex-shrink:0"/>
   <div>
-    <div style="font-size:0.88rem;font-weight:700;color:#f1f5f9;
+    <div style="font-size:0.85rem;font-weight:700;color:#f1f5f9;
                 font-family:monospace;letter-spacing:1px;line-height:1.2">SAGE</div>
-    <div style="font-size:0.65rem;color:#38bdf8;line-height:1.2">
-      Sentiment Signal Assistant</div>
+    <div style="font-size:0.62rem;color:#38bdf8;line-height:1.2">Signal Assistant</div>
   </div>
 </div>
     """, unsafe_allow_html=True)
 
-    # Suggestion chips — only when chat is empty
     if not st.session_state.sage_msgs:
         st.caption("Quick questions:")
-        _suggs = [
-            "What's the strongest signal today?",
-            "Which markets are bearish?",
-            "Explain the top BUY signal",
-            "Any high-confidence SELL signals?",
-        ]
-        for _sg in _suggs:
-            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", use_container_width=True,
-                         type="secondary"):
+        for _sg in ["What's the strongest signal?",
+                    "Which markets are bearish?",
+                    "Explain the top BUY signal",
+                    "High-confidence SELL signals?"]:
+            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", use_container_width=True, type="secondary"):
                 st.session_state.sage_pending = _sg
                 st.rerun()
 
-    # Chat history
     for _msg in st.session_state.sage_msgs[-20:]:
         with st.chat_message(_msg["role"]):
             st.markdown(_msg["content"])
 
-    # Open-analysis buttons for any tickers mentioned
     if st.session_state.sage_tickers:
         st.divider()
-        for _ft3, (_m3, _e3, _d3, _c3) in st.session_state.sage_tickers.items():
-            if st.button(f"📊 Open {_d3} analysis →",
-                         key=f"sopen_{_ft3}",
-                         use_container_width=True,
-                         type="primary"):
+        for _ft2,(_m2,_e2,_d2,_c2) in st.session_state.sage_tickers.items():
+            if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}",
+                         use_container_width=True, type="primary"):
                 load_top_signals.clear()
-                add_ticker_tab(_ft3, _d3, _c3, _m3, _e3)
+                add_ticker_tab(_ft2,_d2,_c2,_m2,_e2)
 
-    # Clear
     if st.session_state.sage_msgs:
-        if st.button("🗑 Clear chat", key="sage_clr", type="secondary"):
+        if st.button("🗑 Clear", key="sage_clr", type="secondary"):
             st.session_state.sage_msgs    = []
             st.session_state.sage_tickers = {}
             st.rerun()
 
-    # Chat input — pinned at bottom by Streamlit naturally
     _inp = st.chat_input("Ask about a stock or market…", key="sage_inp")
     if _inp:
         st.session_state.sage_pending = _inp
