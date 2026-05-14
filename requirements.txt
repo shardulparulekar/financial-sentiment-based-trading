@@ -12,7 +12,6 @@ transformers==4.53.2
 tokenizers==0.21.2
 torch>=2.2.0
 sentencepiece>=0.1.99
-tf-keras
 
 # ── ML ─────────────────────────────────────────────────────────────────────────
 scikit-learn>=1.4.0
