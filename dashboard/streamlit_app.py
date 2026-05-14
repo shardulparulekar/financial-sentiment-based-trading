@@ -781,61 +781,35 @@ def run_pipeline(ticker: str, days_back: int) -> dict:
 # NAV BAR + TAB PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Nav bar + live clock
-# Strategy: render the entire nav bar including clock inside components.html
-# so the script runs. height=38 makes it visible. Negative margin pulls it flush.
-import streamlit.components.v1 as components
+# Nav bar — pure st.markdown (no components.html; Streamlit Cloud safe)
+import datetime as _dt
+_now_utc   = _dt.datetime.now(_dt.timezone.utc)
+_days_nav  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+_mons_nav  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+_clock_str = (f"{_days_nav[_now_utc.weekday()]} {_now_utc.day} "
+              f"{_mons_nav[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC")
+st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;
+            font-family:'Inter',system-ui,sans-serif;margin-bottom:0.5rem;">
+  <span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:600;
+                 color:#3b82f6;letter-spacing:-0.01em;">📡 Sentiment Signal</span>
+    <span style="font-size:0.73rem;color:#475569;margin-left:0.6rem;">
+      FinBERT-powered global trading signals</span>
+  </span>
+  <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;
+               color:#64748b;letter-spacing:0.02em;">🕐 {_clock_str}</span>
+</div>
+""", unsafe_allow_html=True)
 
-_nav_html = (
-    "<style>"
-    "*{box-sizing:border-box;margin:0;padding:0;}"
-    "body{background:#080c14;font-family:'Inter',system-ui,sans-serif;}"
-    ".nav{"
-    "display:flex;align-items:center;justify-content:space-between;"
-    "padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;"
-    "}"
-    ".logo{font-family:'JetBrains Mono','DM Mono',monospace;font-size:1rem;font-weight:600;color:#3b82f6;letter-spacing:-0.01em;}"
-    ".sub{font-size:0.73rem;color:#475569;margin-left:0.6rem;letter-spacing:0.01em;}"
-    ".clk{font-family:'JetBrains Mono','DM Mono',monospace;font-size:0.75rem;color:#64748b;letter-spacing:0.02em;}"
-    ".dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:middle;}"
-    "</style>"
-    "<div class='nav'>"
-    "<span><span class='logo'>[ICON] Sentiment Signal</span>"
-    "<span class='sub'>FinBERT-powered global trading signals</span></span>"
-    "<span class='clk' id='clk'>--</span>"
-    "</div>"
-    "<script>"
-    "(function(){"
-    "var D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];"
-    "var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
-    "function tick(){"
-    "var el=document.getElementById('clk');"
-    "if(!el)return;"
-    "var n=new Date();"
-    "var hh=String(n.getHours()).padStart(2,'0');"
-    "var mm=String(n.getMinutes()).padStart(2,'0');"
-    "var tz='Local';"
-    "try{tz=new Intl.DateTimeFormat('en',{timeZoneName:'short'})"
-    ".formatToParts(n)"
-    ".find(function(p){return p.type==='timeZoneName';}).value;"
-    "}catch(e){}"
-    "el.textContent='[CLK] '+D[n.getDay()]+' '+n.getDate()+' '+M[n.getMonth()]"
-    "+'  '+hh+':'+mm+' '+tz;"
-    "}"
-    "tick();setInterval(tick,1000);"
-    "})();"
-    "</script>"
-)
-# Insert emoji after building string (avoids encoding issues in Python 3.14)
-_nav_html = _nav_html.replace("[ICON]", "📡").replace("[CLK]", "🕐")
-components.html(_nav_html, height=42, scrolling=False)
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
 
 with pill_cols[0]:
     if st.button("🏠 Home", type="secondary" if st.session_state.active_tab != "home" else "primary",
-                 use_container_width=True):
+                 width='stretch'):
         st.session_state.active_tab = "home"
         # Clear signal cache so the home page re-fetches updated_at from
         # Supabase — by the time the user clicks Home the pipeline has finished
@@ -852,12 +826,12 @@ for i, tab in enumerate(st.session_state.open_tickers):
                 tab["display"],
                 key=f"tab_btn_{tab['full']}",
                 type="primary" if is_active else "secondary",
-                use_container_width=True,
+                width='stretch',
             ):
                 st.session_state.active_tab = tab["full"]
                 st.rerun()
         with col_x:
-            if st.button("✕", key=f"close_{tab['full']}", use_container_width=True):
+            if st.button("✕", key=f"close_{tab['full']}", width='stretch'):
                 close_ticker_tab(tab["full"])
 
 st.divider()
@@ -927,7 +901,7 @@ if st.session_state.active_tab == "home":
             )
         with f5:
             st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("Open →", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Open →", type="primary", width='stretch')
 
     if submitted:
         if market == "— select —":
@@ -1082,7 +1056,7 @@ if st.session_state.active_tab == "home":
                         if st.button(
                             f"Open {card['display_t']} →",
                             key=f"top_sig_{card['ticker']}",
-                            use_container_width=True,
+                            width='stretch',
                             type="secondary",
                         ):
                             load_top_signals.clear()
@@ -1112,7 +1086,7 @@ if st.session_state.active_tab == "home":
                 if st.button(
                     toggle_label,
                     key="signals_toggle",
-                    use_container_width=True,
+                    width='stretch',
                     type="secondary",
                 ):
                     st.session_state.signals_expanded = not st.session_state.signals_expanded
@@ -1204,7 +1178,7 @@ if st.session_state.active_tab == "home":
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                st.plotly_chart(fig_spark, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig_spark, width='stretch', config={"displayModeBar": False})
 
             except Exception:
                 st.markdown(f"""
@@ -1311,7 +1285,7 @@ if st.session_state.active_tab == "home":
             key="global_news_search",
         )
     with btn_col:
-        do_search = st.button("Search", use_container_width=True)
+        do_search = st.button("Search", width='stretch')
 
     if news_query.strip() and (do_search or news_query):
         with st.spinner(f"Searching news for '{news_query}'…"):
@@ -1629,7 +1603,7 @@ else:
             font=dict(color="#e5e7eb"), hovermode="x unified", legend=dict(orientation="h"))
         fig.update_yaxes(gridcolor="#1e2130", zeroline=False)
         fig.update_xaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         if not has_s:
             st.info("No news data found — price chart only.")
         st.caption(f"Prices in **{currency_name}** ({currency_sym.strip()})")
@@ -1654,7 +1628,7 @@ else:
             font=dict(color="#e5e7eb"), hovermode="x unified", legend=dict(orientation="h"))
         fig2.update_yaxes(gridcolor="#1e2130")
         fig2.update_xaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
         st.caption(f"Currency: **{currency_name}** · Transaction cost: 10bps · Starting: {currency_sym}10,000")
 
     with atab3:
@@ -1691,7 +1665,7 @@ else:
                     font=dict(color="#e5e7eb"), showlegend=False, coloraxis_showscale=False, margin=dict(l=0))
                 fig3.update_xaxes(gridcolor="#1e2130")
                 fig3.update_yaxes(gridcolor="#1e2130")
-                st.plotly_chart(fig3, use_container_width=True)
+                st.plotly_chart(fig3, width='stretch')
         with col_b:
             st.markdown("#### Walk-forward results")
             res = data["results"]
@@ -1699,13 +1673,13 @@ else:
                 {"Model": n, "Accuracy": f"{s['accuracy_mean']:.3f}±{s['accuracy_std']:.3f}",
                  "F1": f"{s['f1_mean']:.3f}±{s['f1_std']:.3f}"}
                 for n, s in res["summary"].items()
-            ]), hide_index=True, use_container_width=True)
+            ]), hide_index=True, width='stretch')
             st.markdown("#### Fold detail")
             st.dataframe(pd.DataFrame([
                 {"Model": n, "Fold": f["fold"], "Acc": round(f["accuracy"],3),
                  "F1": round(f["f1"],3), "Train": f["train_rows"], "Test": f["test_rows"]}
                 for n, folds in res["fold_details"].items() for f in folds
-            ]), hide_index=True, use_container_width=True)
+            ]), hide_index=True, width='stretch')
 
     with atab4:
         h_search_col, h_mode_col = st.columns([4, 1])
@@ -1875,7 +1849,7 @@ else:
                     xaxis=dict(gridcolor="#1e2130"),
                     margin=dict(l=0, r=0, t=40, b=0),
                 )
-                st.plotly_chart(fig_acc, use_container_width=True)
+                st.plotly_chart(fig_acc, width='stretch')
 
                 # Prediction history table
                 st.markdown("#### Recent predictions")
@@ -1886,7 +1860,7 @@ else:
                 display_perf["correct"]    = display_perf["correct"].map({True:"✓", False:"✗"})
                 display_perf["confidence"] = display_perf["confidence"].apply(lambda x: f"{x:.1%}")
                 display_perf["sentiment"]  = display_perf["sentiment"].apply(lambda x: f"{x:+.3f}")
-                st.dataframe(display_perf.head(20), hide_index=True, use_container_width=True)
+                st.dataframe(display_perf.head(20), hide_index=True, width='stretch')
 
             st.divider()
 
@@ -1909,75 +1883,6 @@ else:
 # SAGE — Persistent right-side chat assistant
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Force sidebar to always be expanded on load
-st.markdown("""
-<style>
-/* Move sidebar to the RIGHT */
-[data-testid="stSidebar"] {
-    left: auto !important;
-    right: 0 !important;
-    width: 280px !important;
-    min-width: 280px !important;
-    max-width: 280px !important;
-    background: #080f1e !important;
-    border-left: 1px solid rgba(56,189,248,0.18) !important;
-    border-right: none !important;
-}
-[data-testid="stSidebar"] > div:first-child {
-    background: #080f1e !important;
-    padding-top: 0 !important;
-    padding-left: 0.6rem !important;
-    padding-right: 0.6rem !important;
-    overflow-y: auto !important;
-}
-/* Hide Streamlit's sidebar collapse/expand arrow entirely */
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-button[data-testid="baseButton-headerNoPadding"] {
-    display: none !important;
-}
-/* When sidebar is collapsed, make sure page is NOT shifted */
-[data-testid="stSidebar"][aria-expanded="false"] {
-    width: 0 !important;
-    min-width: 0 !important;
-}
-/* Main content — no margin offset, sidebar overlays */
-[data-testid="stMain"] {
-    overflow-x: hidden !important;
-}
-/* Chat input area */
-[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
-    background: #0c1824 !important;
-    border: 1px solid rgba(56,189,248,0.25) !important;
-    color: #f1f5f9 !important;
-    font-size: 0.8rem !important;
-    border-radius: 10px !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatInput"] button {
-    background: rgba(56,189,248,0.15) !important;
-    border: 1px solid rgba(56,189,248,0.3) !important;
-    color: #38bdf8 !important;
-}
-/* Chat messages — hide avatars, reduce padding */
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"] {
-    display: none !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatMessage"] {
-    background: transparent !important;
-    padding: 0.1rem 0 !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatMessage"] p {
-    font-size: 0.79rem !important;
-    line-height: 1.5 !important;
-}
-/* Buttons inside sidebar */
-[data-testid="stSidebar"] button {
-    font-size: 0.75rem !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # ── Session state ─────────────────────────────────────────────────────────────
 if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
 if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
@@ -1998,7 +1903,7 @@ for _ex, _ecfg in EU_EXCHANGES.items():
         _f = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
         _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
 
-def _sk_find(msg: str) -> list[str]:
+def _sk_find(msg: str) -> list:
     found = []
     for w in msg.upper().split():
         w = w.strip(".,!?()[]'\"")
@@ -2025,24 +1930,59 @@ def _live_sig(ft, mkt, exch):
         fe   = FeatureEngineer().build_features(sc)  if sc   else None
         if fe is None or fe.empty: return None
         s = float(fe.iloc[-1].get("mean_score", 0))
-        return {"predicted": 1 if s>0 else -1, "confidence": min(abs(s)*2+0.5,0.99),
+        return {"predicted": 1 if s > 0 else -1, "confidence": min(abs(s)*2+0.5, 0.99),
                 "sentiment": s, "updated_at": datetime.now(__import__("pytz").utc), "live": True}
     except Exception:
         return None
 
+def _synth_answer(msgs, ctx):
+    """Data-driven fallback — build answer directly from signal/sentiment context."""
+    if not ctx or ctx == "No data.":
+        return ("No live data available right now. "
+                "Try asking about a specific ticker like **AAPL** or **TSLA** "
+                "and I'll fetch its signal directly.")
+    lines = ctx.split("\n")
+    q = (msgs[-1]["content"] if msgs else "").lower()
+    parts = []
+    for line in lines:
+        if line.startswith("Signals:"):
+            sigs  = line.replace("Signals: ", "").split(", ")
+            buys  = [s for s in sigs if "BUY"  in s]
+            sells = [s for s in sigs if "SELL" in s]
+            if "sell" in q:
+                parts.append("**Top SELL signals:** " + (", ".join(sells[:3]) if sells else "none right now."))
+            elif "buy" in q:
+                parts.append("**Top BUY signals:** " + (", ".join(buys[:3]) if buys else "none right now."))
+            else:
+                if sigs: parts.append(f"**Strongest signal:** {sigs[0]}.")
+                if buys:  parts.append(f"Top BUYs: {', '.join(buys[:3])}.")
+                if sells: parts.append(f"Top SELLs: {', '.join(sells[:3])}.")
+        if line.startswith("Sentiment:"):
+            sent    = line.replace("Sentiment: ", "")
+            bearish = [s.split(":")[0] for s in sent.split(" | ") if "bearish" in s.lower()]
+            bullish = [s.split(":")[0] for s in sent.split(" | ") if "bullish" in s.lower()]
+            if bearish: parts.append(f"**Bearish markets:** {', '.join(bearish)}.")
+            if bullish: parts.append(f"**Bullish markets:** {', '.join(bullish)}.")
+            if not bearish and not bullish:
+                parts.append(f"Current sentiment — {sent}.")
+    if parts:
+        return "  \n".join(parts) + "\n\n*ℹ️ Data-driven answer (AI model offline).*"
+    return f"Here's what I have:\n\n{ctx}\n\n*Try asking about a specific ticker for a live signal.*"
+
 def _hf_call(msgs, ctx):
+    """HuggingFace LLM call with data-driven fallback."""
     try:
         import requests as _rq, os as _os
         try:    tok = st.secrets["huggingface"]["token"]
-        except Exception: tok = _os.getenv("HUGGINGFACE_TOKEN","")
+        except Exception: tok = _os.getenv("HUGGINGFACE_TOKEN", "")
         if not tok:
-            return "⚠️ No HuggingFace token. Add [huggingface]\ntoken=\'hf_xxx\' to Streamlit secrets."
+            return _synth_answer(msgs, ctx)
         sys_p = ("You are Sage, a concise financial assistant for Sentiment Signal. "
                  "Answer in 2-3 sentences. Never give direct investment advice.\n\n"
                  f"Context:\n{ctx}")
         prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{sys_p}<|eot_id|>"
         for m in msgs[-6:]:
-            r = "user" if m["role"]=="user" else "assistant"
+            r = "user" if m["role"] == "user" else "assistant"
             c = m["content"] if "<div" not in m["content"] else "[signal shown]"
             prompt += f"<|start_header_id|>{r}<|end_header_id|>\n{c}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
@@ -2052,24 +1992,20 @@ def _hf_call(msgs, ctx):
             json={"inputs": prompt, "parameters": {
                 "max_new_tokens": 160, "temperature": 0.4,
                 "return_full_text": False,
-                "stop": ["<|eot_id|>","<|start_header_id|>"]}},
+                "stop": ["<|eot_id|>", "<|start_header_id|>"]}},
             timeout=30)
         if resp.status_code == 200:
             data = resp.json()
-            txt = (data[0].get("generated_text","") if isinstance(data,list) and data else "").strip()
-            for s in ["<|eot_id|>","<|start_header_id|>"]:
+            txt = (data[0].get("generated_text", "") if isinstance(data, list) and data else "").strip()
+            for s in ["<|eot_id|>", "<|start_header_id|>"]:
                 txt = txt[:txt.index(s)].strip() if s in txt else txt
-            return txt or "I couldn't generate a response. Please try again."
-        elif resp.status_code == 503:
-            return "Model warming up (~20s). Please try again shortly."
-        elif resp.status_code == 404:
-            return "AI model temporarily unavailable. Ticker spotlights still work."
+            return txt or _synth_answer(msgs, ctx)
         else:
-            return f"Model error ({resp.status_code}). Please try again."
-    except Exception as e:
-        return f"Error: {e}"
+            return _synth_answer(msgs, ctx)
+    except Exception:
+        return _synth_answer(msgs, ctx)
 
-# ── Process pending message ───────────────────────────────────────────────────
+# ── Process pending message (runs before sidebar renders) ─────────────────────
 if st.session_state.sage_pending:
     _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
@@ -2079,31 +2015,33 @@ if st.session_state.sage_pending:
 
     if _hits:
         _ft = _hits[0]
-        _mkt, _exch, _dt, _co = _SK.get(_ft, (None,None,_ft,_ft))
+        _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
         _sig = _sig_from_df(_ft, _top)
         if not _sig and _mkt:
             with st.spinner(f"Fetching live signal for {_dt}…"):
                 _sig = _live_sig(_ft, _mkt, _exch)
         if _sig and _mkt:
             import pytz as _ptz2
-            _is_up = _sig["predicted"]==1
-            _s  = _sig["sentiment"]
-            _sl = "bullish" if _s>0.05 else ("bearish" if _s<-0.05 else "neutral")
-            _sc = (_sig["updated_at"]).total_seconds() if hasattr((_sig["updated_at"]),"total_seconds") else (datetime.now(_ptz2.utc)-_sig["updated_at"]).total_seconds()
+            _is_up = _sig["predicted"] == 1
+            _s     = _sig["sentiment"]
+            _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
             try:
-                _sc = (datetime.now(_ptz2.utc)-_sig["updated_at"]).total_seconds()
+                _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
             except Exception:
                 _sc = 0
-            _age = f"{int(_sc//60)}m ago" if _sc<3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+            _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
             _flag = (_exch or _mkt or "").split(" ")[0]
             _live = " · live" if _sig.get("live") else ""
-            _rep = (f"**{_flag} {_dt}** ({_co})\n\n"
-                    f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
-                    f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_live}")
-            st.session_state.sage_tickers[_ft] = (_mkt,_exch,_dt,_co)
+            _rep  = (f"**{_flag} {_dt}** ({_co})\n\n"
+                     f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
+                     f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_live}")
+            # Tag this ticker to the index of the assistant message about to be appended
+            _next_idx = len(st.session_state.sage_msgs) + 1  # +1 because user msg goes first
+            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
         elif _mkt:
             _rep = f"No pre-computed signal for **{_dt}**. Click Open below to run a live analysis."
-            st.session_state.sage_tickers[_ft] = (_mkt,_exch,_dt,_co)
+            _next_idx = len(st.session_state.sage_msgs) + 1
+            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
         else:
             _rep = f"**{_ft}** isn't in our tracked ticker list."
     else:
@@ -2111,31 +2049,33 @@ if st.session_state.sage_pending:
         if _top is not None and not _top.empty:
             _ctx.append("Signals: " + ", ".join(
                 f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                for _,r in _top.head(5).iterrows()))
+                for _, r in _top.head(10).iterrows()))
         if _sent:
             _ctx.append("Sentiment: " + " | ".join(
                 f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                for mk,d in _sent.items()))
+                for mk, d in _sent.items()))
         _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
 
-    st.session_state.sage_msgs.append({"role":"user",      "content":_pend})
-    st.session_state.sage_msgs.append({"role":"assistant", "content":_rep})
+    st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
 # ── Render sidebar ────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdnJyBjeD0nNTAlJyBjeT0nNTAlJyByPSc1MCUnPjxzdG9wIG9mZnNldD0nMCUnIHN0b3AtY29sb3I9JyUyMzA4MjA0MCcvPjxzdG9wIG9mZnNldD0nMTAwJScgc3RvcC1jb2xvcj0nJTIzMDUwZjFmJy8+PC9yYWRpYWxHcmFkaWVudD48ZmlsdGVyIGlkPSdmJyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScxJyBvcGFjaXR5PScwLjMnLz48cG9seWxpbmUgcG9pbnRzPSc2LDM4IDEyLDM4IDE1LDI2IDE4LjUsNTAgMjIsMjggMjUuNSw0NCAyOSwyMyAzMi41LDQ3IDM2LDMwIDM5LDQyIDQyLDM4IDQ4LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScyLjInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZiknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSczJyBmaWxsPSclMjMzOGJkZjgnIGZpbHRlcj0ndXJsKCUyM2YpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nNicgZmlsbD0nJTIzMzhiZGY4JyBvcGFjaXR5PScwLjEyJy8+PHRleHQgeD0nMzYnIHk9JzYyJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmb250LWZhbWlseT0nbW9ub3NwYWNlJyBmb250LXNpemU9JzknIGZvbnQtd2VpZ2h0PSc3MDAnIGxldHRlci1zcGFjaW5nPSczJyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuOSc+U0FHRTwvdGV4dD48L3N2Zz4="
 
 with st.sidebar:
+    # Header — padded so icon never clips at top
     st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.55rem;
-            padding:0.6rem 0 0.55rem;
-            margin:0 -0.6rem 0.4rem;padding-left:0.6rem;
+<div style="display:flex;align-items:center;gap:0.6rem;
+            padding:0.8rem 0.6rem 0.65rem;
+            margin:-0.5rem -0.6rem 0.6rem;
             border-bottom:1px solid rgba(56,189,248,0.15);
             background:linear-gradient(135deg,#0c1f3d,#080f1e);">
-  <img src="{_SAGE_URI}" style="width:32px;height:32px;border-radius:9px;flex-shrink:0"/>
-  <div>
-    <div style="font-size:0.85rem;font-weight:700;color:#f1f5f9;
-                font-family:monospace;letter-spacing:1px;line-height:1.2">SAGE</div>
-    <div style="font-size:0.62rem;color:#38bdf8;line-height:1.2">Signal Assistant</div>
+  <img src="{_SAGE_URI}" style="width:38px;height:38px;border-radius:10px;
+       flex-shrink:0;display:block;object-fit:contain;"/>
+  <div style="min-width:0">
+    <div style="font-size:0.88rem;font-weight:700;color:#f1f5f9;
+                font-family:monospace;letter-spacing:1.5px;line-height:1.2">SAGE</div>
+    <div style="font-size:0.63rem;color:#38bdf8;line-height:1.3">Signal Assistant</div>
   </div>
 </div>
     """, unsafe_allow_html=True)
@@ -2146,24 +2086,29 @@ with st.sidebar:
                     "Which markets are bearish?",
                     "Explain the top BUY signal",
                     "High-confidence SELL signals?"]:
-            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", use_container_width=True, type="secondary"):
+            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
                 st.session_state.sage_pending = _sg
                 st.rerun()
 
-    for _msg in st.session_state.sage_msgs[-20:]:
+    # Render messages — Open button appears right after the relevant assistant message
+    _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items()}
+    _recent_msgs = st.session_state.sage_msgs[-30:]
+    for _mi, _msg in enumerate(_recent_msgs):
         with st.chat_message(_msg["role"]):
             st.markdown(_msg["content"])
-
-    if st.session_state.sage_tickers:
-        st.divider()
-        for _ft2,(_m2,_e2,_d2,_c2) in st.session_state.sage_tickers.items():
-            if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}",
-                         use_container_width=True, type="primary"):
-                load_top_signals.clear()
-                add_ticker_tab(_ft2,_d2,_c2,_m2,_e2)
+        # Show Open button inline with the assistant reply that contains this ticker
+        if _msg["role"] == "assistant":
+            _abs_idx = len(st.session_state.sage_msgs) - len(_recent_msgs) + _mi
+            if _abs_idx in _ticker_by_msgidx:
+                _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
+                if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}_{_mi}",
+                             width='stretch', type="primary"):
+                    load_top_signals.clear()
+                    add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
     if st.session_state.sage_msgs:
-        if st.button("🗑 Clear", key="sage_clr", type="secondary"):
+        st.divider()
+        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
             st.session_state.sage_msgs    = []
             st.session_state.sage_tickers = {}
             st.rerun()
