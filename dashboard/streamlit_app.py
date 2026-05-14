@@ -2081,35 +2081,56 @@ def _synth_answer(msgs, ctx):
     """Data-driven fallback — build answer directly from signal/sentiment context."""
     if not ctx or ctx == "No data.":
         return ("No live data available right now. "
-                "Try asking about a specific ticker like **AAPL** or **TSLA** "
+                "Try asking about a specific ticker like AAPL or TSLA "
                 "and I'll fetch its signal directly.")
     lines = ctx.split("\n")
     q = (msgs[-1]["content"] if msgs else "").lower()
     parts = []
+
+    # Classify the question intent clearly
+    wants_sell     = any(w in q for w in ["sell", "short", "bearish signal"])
+    wants_buy      = any(w in q for w in ["buy", "long", "bullish signal"])
+    wants_bearish  = any(w in q for w in ["bearish", "bear", "down", "negative"])
+    wants_bullish  = any(w in q for w in ["bullish", "bull", "up", "positive"])
+    wants_strongest= any(w in q for w in ["strongest", "best", "top signal", "highest"])
+    wants_sentiment= any(w in q for w in ["sentiment", "market", "bearish", "bullish", "feel"])
+
     for line in lines:
         if line.startswith("Signals:"):
             sigs  = line.replace("Signals: ", "").split(", ")
             buys  = [s for s in sigs if "BUY"  in s]
             sells = [s for s in sigs if "SELL" in s]
-            if "sell" in q:
-                parts.append("**Top SELL signals:** " + (", ".join(sells[:3]) if sells else "none right now."))
-            elif "buy" in q:
-                parts.append("**Top BUY signals:** " + (", ".join(buys[:3]) if buys else "none right now."))
-            else:
-                if sigs: parts.append(f"**Strongest signal:** {sigs[0]}.")
+            if wants_sell and not wants_buy:
+                parts.append("Top SELL signals: " + (", ".join(sells[:5]) if sells else "none found."))
+            elif wants_buy and not wants_sell:
+                parts.append("Top BUY signals: " + (", ".join(buys[:5]) if buys else "none found."))
+            elif wants_strongest:
+                parts.append(f"Strongest signal: {sigs[0]}." if sigs else "No signals available.")
                 if buys:  parts.append(f"Top BUYs: {', '.join(buys[:3])}.")
                 if sells: parts.append(f"Top SELLs: {', '.join(sells[:3])}.")
+            else:
+                # Generic — show both
+                if buys:  parts.append(f"Top BUYs: {', '.join(buys[:3])}.")
+                if sells: parts.append(f"Top SELLs: {', '.join(sells[:3])}.")
+
         if line.startswith("Sentiment:"):
             sent    = line.replace("Sentiment: ", "")
-            bearish = [s.split(":")[0] for s in sent.split(" | ") if "bearish" in s.lower()]
-            bullish = [s.split(":")[0] for s in sent.split(" | ") if "bullish" in s.lower()]
-            if bearish: parts.append(f"**Bearish markets:** {', '.join(bearish)}.")
-            if bullish: parts.append(f"**Bullish markets:** {', '.join(bullish)}.")
-            if not bearish and not bullish:
-                parts.append(f"Current sentiment — {sent}.")
+            entries = sent.split(" | ")
+            bearish_list = [s.split(":")[0] for s in entries if "bearish" in s.lower()]
+            bullish_list = [s.split(":")[0] for s in entries if "bullish" in s.lower()]
+            neutral_list = [s.split(":")[0] for s in entries if "neutral" in s.lower()]
+            if wants_bearish and not wants_bullish:
+                parts.append("Bearish markets: " + (", ".join(bearish_list) if bearish_list else "none right now — markets look mixed or bullish."))
+            elif wants_bullish and not wants_bearish:
+                parts.append("Bullish markets: " + (", ".join(bullish_list) if bullish_list else "none right now — markets look mixed or bearish."))
+            elif wants_sentiment or not parts:
+                if bearish_list: parts.append(f"Bearish: {', '.join(bearish_list)}.")
+                if bullish_list: parts.append(f"Bullish: {', '.join(bullish_list)}.")
+                if neutral_list: parts.append(f"Neutral: {', '.join(neutral_list)}.")
+
     if parts:
-        return "  \n".join(parts) + "\n\n*ℹ️ Data-driven answer (AI model offline).*"
-    return f"Here's what I have:\n\n{ctx}\n\n*Try asking about a specific ticker for a live signal.*"
+        return "\n".join(parts) + "\n\n_Data-driven answer — AI model offline._"
+    return f"Here's what I have:\n{ctx}\n\n_Try asking about a specific ticker for a live signal._"
 
 def _hf_call(msgs, ctx):
     """HuggingFace LLM call with data-driven fallback."""
@@ -2180,16 +2201,18 @@ def _resolve_and_fetch(ft_key):
         return f"{ft_key} isn't in our tracked ticker list.", None, None
 
 # ── Markets and exchanges available ───────────────────────────────────────────
-_ALL_MARKETS = list(MARKET_CONFIG.keys())          # e.g. ["🇺🇸 USA", "🇮🇳 India", ...]
-_EU_MKT      = next((m for m in _ALL_MARKETS if "Europe" in m or "EU" in m), None)
-_ALL_EXCHANGES = list(EU_EXCHANGES.keys())         # ["Amsterdam", "Frankfurt", "London", ...]
+_ALL_MARKETS   = list(MARKET_CONFIG.keys()) + (["🇪🇺 Europe"] if "🇪🇺 Europe" not in MARKET_CONFIG else [])
+_EU_MKT        = "🇪🇺 Europe"
+_ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 def _tickers_for(market, exchange=None):
     """Return list of (full_key, display_ticker, name) for a given market/exchange."""
     results = []
     for key, val in _SK.items():
         _m, _e, _dt, _co = val
-        if _m == market:
+        # Europe tickers are stored with market="🇪🇺 Europe" in _SK
+        _m_match = (_m == market) or (market == _EU_MKT and "Europe" in str(_m))
+        if _m_match:
             if exchange is None or _e == exchange:
                 results.append((key, _dt, _co))
     return sorted(results, key=lambda x: x[1])
@@ -2222,30 +2245,26 @@ if st.session_state.sage_pending:
                 "content": f"Couldn't find '{_pend}' in the available tickers. Please pick from the buttons above, or type the exact ticker symbol.",
             })
     else:
-        # Fresh message — check if it looks like a ticker lookup request or general question
+        # Decide: is this a general market question or a ticker lookup?
+        _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
+                          "bullish","sell","buy","confidence","what","which","top",
+                          "high","low","best","worst","today","now","right","explain",
+                          "tell","show","give","list","any","all","current","overall"}
+        _pend_words = set(_pend.lower().replace("?","").replace("-"," ").split())
+        _is_general_q = len(_pend_words & _GENERAL_WORDS) >= 2 or len(_pend.split()) > 4
+
         _hits = _sk_find(_pend)
-        _is_ticker_q = (len(_pend.split()) <= 3)  # short = likely ticker; long = likely general question
 
         if _hits and len(_hits) == 1:
-            # Clear single match — answer directly
+            # Clear single ticker match — answer directly, no wizard
             st.session_state.sage_msgs.append({"role": "user", "content": _pend})
             _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
             st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
             if _ttup and _tkey:
                 st.session_state.sage_tickers[_tkey] = _ttup
 
-        elif _is_ticker_q:
-            # Short query but no match found — start wizard: ask market first
-            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
-            st.session_state.sage_msgs.append({
-                "role": "assistant",
-                "content": "Which market is this stock from?",
-                "wizard": "market"
-            })
-            st.session_state.sage_flow = {"step": "market", "raw": _pend}
-
-        else:
-            # Long general question — answer from data context
+        elif _is_general_q or not _pend.replace(" ","").isalnum():
+            # General question — answer from data, no wizard
             _top  = load_top_signals(n=20)
             _sent = load_market_sentiment()
             _ctx  = []
@@ -2260,6 +2279,16 @@ if st.session_state.sage_pending:
             _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
             st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
             st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+
+        else:
+            # Short unknown word — likely a ticker — start wizard
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": "Which market is this stock from?",
+                "wizard": "market"
+            })
+            st.session_state.sage_flow = {"step": "market", "raw": _pend}
 
 # ── Icon — simple flat blue square with signal waveform bars ──────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTAiIGZpbGw9IiMyNTYzZWIiLz4KICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxOC41IiB3aWR0aD0iMjAiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMjciIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIyNyIgeT0iMTguNSIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
@@ -2338,9 +2367,8 @@ with st.sidebar:
                 if st.button(f"{_mflag} {_mname}", key=f"wiz_mkt_{_mkt_opt}_{_mi}",
                              width='stretch', type="secondary"):
                     st.session_state.sage_msgs.append({"role": "user", "content": _mkt_opt})
-                    st.session_state.sage_flow = {**st.session_state.sage_flow, "market": _mkt_opt}
+                    st.session_state.sage_flow = {**(st.session_state.sage_flow or {}), "market": _mkt_opt}
                     if _mkt_opt == _EU_MKT:
-                        # Europe → ask exchange next
                         st.session_state.sage_msgs.append({
                             "role": "assistant",
                             "content": "Which European exchange?",
@@ -2348,7 +2376,6 @@ with st.sidebar:
                         })
                         st.session_state.sage_flow["step"] = "exchange"
                     else:
-                        # Non-Europe → go straight to ticker
                         _tcks = _tickers_for(_mkt_opt)
                         st.session_state.sage_msgs.append({
                             "role": "assistant",
@@ -2410,7 +2437,7 @@ with st.sidebar:
             st.session_state.sage_flow    = None
             st.rerun()
 
-    _inp = st.chat_input("Ask about markets or type a ticker…", key="sage_inp")
+    _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if _inp:
         st.session_state.sage_pending = _inp
         st.rerun()
