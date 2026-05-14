@@ -85,6 +85,12 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TICKERS_OVERRIDE: ${{ github.event.inputs.tickers }}
           DAY_BATCH: ${{ github.event.inputs.batch }}
+          # Prevent transformers from loading TensorFlow — only PyTorch is needed.
+          # tf-keras being present in the environment causes transformers to attempt
+          # TF initialisation which segfaults (exit 139) on Python 3.14 + no CUDA.
+          USE_TF: "0"
+          USE_TORCH: "1"
+          TRANSFORMERS_NO_ADVISORY_WARNINGS: "1"
         run: |
           if [ -f "fintech-sentiment/scripts/daily_retrain.py" ]; then
             echo "Running from fintech-sentiment subfolder"
