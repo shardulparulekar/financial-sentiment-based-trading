@@ -1964,8 +1964,10 @@ section[data-testid="stSidebar"] > div > div > div > button,
 if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
 if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
 if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
-# sage_pick: dict with keys "stage","raw","candidates" — drives guided flow
 if "sage_pick"    not in st.session_state: st.session_state.sage_pick    = None
+# sage_flow: drives the guided market→exchange→ticker wizard
+# keys: "step" (market|exchange|ticker), "market", "exchange"
+if "sage_flow"    not in st.session_state: st.session_state.sage_flow    = None
 
 # ── Ticker lookup ─────────────────────────────────────────────────────────────
 _SK: dict = {}
@@ -2145,8 +2147,274 @@ def _hf_call(msgs, ctx):
     except Exception:
         return _synth_answer(msgs, ctx)
 
-# ── Process pending message (runs before sidebar renders) ─────────────────────
+# ── Helper: fetch signal for a resolved full ticker key ───────────────────────
 def _resolve_and_fetch(ft_key):
+    _mkt, _exch, _dt, _co = _SK.get(ft_key, (None, None, ft_key, ft_key))
+    _top = load_top_signals(n=20)
+    _sig = _sig_from_df(ft_key, _top)
+    if not _sig and _mkt:
+        with st.spinner(f"Fetching live signal for {_dt}…"):
+            _sig = _live_sig(ft_key, _mkt, _exch)
+    if _sig and _mkt:
+        import pytz as _ptz2
+        _is_up = _sig["predicted"] == 1
+        _s     = _sig["sentiment"]
+        _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
+        try:    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
+        except: _sc = 0
+        _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+        _flag = (_exch or _mkt or "").split(" ")[0]
+        _src  = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
+        _exlb = f" ({_exch})" if _exch else f" ({_mkt})"
+        _rep  = (f"{_flag} {_dt}{_exlb} — {_co}\n\n"
+                 f"{'🟢 BUY' if _is_up else '🔴 SELL'} · {_sig['confidence']:.0%} confidence\n\n"
+                 f"Sentiment: {_sl} ({_s:+.3f}) · ⏱ {_age}{_src}")
+        _next = len(st.session_state.sage_msgs) + 1
+        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
+    elif _mkt:
+        _exlb = f" on {_exch}" if _exch else f" ({_mkt})"
+        _next = len(st.session_state.sage_msgs) + 1
+        return (f"No pre-computed signal for {_dt}{_exlb}. Click Open below to run a live analysis.",
+                (_mkt, _exch, _dt, _co, _next), ft_key)
+    else:
+        return f"{ft_key} isn't in our tracked ticker list.", None, None
+
+# ── Markets and exchanges available ───────────────────────────────────────────
+_ALL_MARKETS = list(MARKET_CONFIG.keys())          # e.g. ["🇺🇸 USA", "🇮🇳 India", ...]
+_EU_MKT      = next((m for m in _ALL_MARKETS if "Europe" in m or "EU" in m), None)
+_ALL_EXCHANGES = list(EU_EXCHANGES.keys())         # ["Amsterdam", "Frankfurt", "London", ...]
+
+def _tickers_for(market, exchange=None):
+    """Return list of (full_key, display_ticker, name) for a given market/exchange."""
+    results = []
+    for key, val in _SK.items():
+        _m, _e, _dt, _co = val
+        if _m == market:
+            if exchange is None or _e == exchange:
+                results.append((key, _dt, _co))
+    return sorted(results, key=lambda x: x[1])
+
+# ── Process pending free-text message ─────────────────────────────────────────
+if st.session_state.sage_pending:
+    _pend = st.session_state.sage_pending
+    st.session_state.sage_pending = None
+
+    # If we're in a wizard flow, treat the text as a ticker name
+    if st.session_state.sage_flow and st.session_state.sage_flow.get("step") == "ticker_text":
+        _flow   = st.session_state.sage_flow
+        _market = _flow["market"]
+        _exch   = _flow.get("exchange")
+        # Try to match typed text against tickers in this market/exchange
+        _cands  = _tickers_for(_market, _exch)
+        _typed  = _pend.upper().strip()
+        _match  = next((c for c in _cands if c[1].upper() == _typed or c[0].upper() == _typed), None)
+        if _match:
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            _rep, _ttup, _tkey = _resolve_and_fetch(_match[0])
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+            if _ttup and _tkey:
+                st.session_state.sage_tickers[_tkey] = _ttup
+            st.session_state.sage_flow = None
+        else:
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": f"Couldn't find '{_pend}' in the available tickers. Please pick from the buttons above, or type the exact ticker symbol.",
+            })
+    else:
+        # Fresh message — check if it looks like a ticker lookup request or general question
+        _hits = _sk_find(_pend)
+        _is_ticker_q = (len(_pend.split()) <= 3)  # short = likely ticker; long = likely general question
+
+        if _hits and len(_hits) == 1:
+            # Clear single match — answer directly
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+            if _ttup and _tkey:
+                st.session_state.sage_tickers[_tkey] = _ttup
+
+        elif _is_ticker_q:
+            # Short query but no match found — start wizard: ask market first
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": "Which market is this stock from?",
+                "wizard": "market"
+            })
+            st.session_state.sage_flow = {"step": "market", "raw": _pend}
+
+        else:
+            # Long general question — answer from data context
+            _top  = load_top_signals(n=20)
+            _sent = load_market_sentiment()
+            _ctx  = []
+            if _top is not None and not _top.empty:
+                _ctx.append("Signals: " + ", ".join(
+                    f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                    for _, r in _top.head(10).iterrows()))
+            if _sent:
+                _ctx.append("Sentiment: " + " | ".join(
+                    f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                    for mk, d in _sent.items()))
+            _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
+            st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+
+# ── Icon — simple flat blue square with signal waveform bars ──────────────────
+_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTAiIGZpbGw9IiMyNTYzZWIiLz4KICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxOC41IiB3aWR0aD0iMjAiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMjciIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIyNyIgeT0iMTguNSIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
+
+# Migrate old 4-tuple ticker entries
+for _k in list(st.session_state.sage_tickers.keys()):
+    _v = st.session_state.sage_tickers[_k]
+    if len(_v) == 4:
+        st.session_state.sage_tickers[_k] = (_v[0], _v[1], _v[2], _v[3], -1)
+
+# ── Render sidebar ─────────────────────────────────────────────────────────────
+with st.sidebar:
+
+    # Header
+    st.markdown(f"""
+<div style="display:flex;align-items:center;gap:0.65rem;
+            padding:0.9rem 0.6rem 0.8rem;margin:-0.5rem -0.6rem 0.7rem;
+            border-bottom:1px solid rgba(56,189,248,0.18);
+            background:#0f2044;">
+  <img src="{_SAGE_URI}" width="36" height="36"
+       style="border-radius:9px;flex-shrink:0;display:block;"/>
+  <div>
+    <div style="font-size:0.9rem;font-weight:800;color:#f1f5f9;
+                font-family:monospace;letter-spacing:2.5px;line-height:1.2;">SAGE</div>
+    <div style="font-size:0.63rem;color:#38bdf8;margin-top:1px;">Signal Assistant</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+    # Quick-start buttons when empty
+    if not st.session_state.sage_msgs and not st.session_state.sage_flow:
+        st.caption("Quick questions:")
+        for _sg in ["What's the strongest signal?",
+                    "Which markets are bearish?",
+                    "Top BUY signals right now",
+                    "High-confidence SELL signals?"]:
+            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
+                st.session_state.sage_pending = _sg
+                st.rerun()
+        st.caption("Or look up a stock:")
+        if st.button("🔍 Look up a stock signal", key="sg_wizard", width='stretch', type="primary"):
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": "Which market is this stock from?",
+                "wizard": "market"
+            })
+            st.session_state.sage_flow = {"step": "market", "raw": ""}
+            st.rerun()
+
+    # Render messages + wizard buttons inline
+    _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
+    _recent = st.session_state.sage_msgs[-40:]
+
+    for _mi, _msg in enumerate(_recent):
+        _is_user = _msg["role"] == "user"
+        _bg   = "rgba(30,41,59,0.8)"  if _is_user else "rgba(8,20,40,0.7)"
+        _br   = "12px 12px 3px 12px"  if _is_user else "12px 12px 12px 3px"
+        _ml   = "1.2rem" if _is_user else "0"
+        _mr   = "0"      if _is_user else "1.2rem"
+        _lbl  = "You"    if _is_user else "Sage"
+        _lclr = "#475569" if _is_user else "#38bdf8"
+        _content = _msg["content"].replace(chr(10), "<br>")
+        st.markdown(f"""
+<div style="margin-bottom:0.4rem;margin-left:{_ml};margin-right:{_mr}">
+  <div style="font-size:0.6rem;color:{_lclr};margin-bottom:2px;
+              text-align:{'right' if _is_user else 'left'};font-family:monospace;">{_lbl}</div>
+  <div style="background:{_bg};border-radius:{_br};padding:0.45rem 0.65rem;
+              font-size:0.79rem;line-height:1.6;color:#e2e8f0;
+              border:1px solid rgba(255,255,255,0.07);">{_content}</div>
+</div>""", unsafe_allow_html=True)
+
+        # ── Wizard: market buttons ──────────────────────────────────────────
+        if not _is_user and _msg.get("wizard") == "market" and _mi == len(_recent) - 1:
+            for _mkt_opt in _ALL_MARKETS:
+                _mflag = _mkt_opt.split(" ")[0]
+                _mname = " ".join(_mkt_opt.split(" ")[1:])
+                if st.button(f"{_mflag} {_mname}", key=f"wiz_mkt_{_mkt_opt}_{_mi}",
+                             width='stretch', type="secondary"):
+                    st.session_state.sage_msgs.append({"role": "user", "content": _mkt_opt})
+                    st.session_state.sage_flow = {**st.session_state.sage_flow, "market": _mkt_opt}
+                    if _mkt_opt == _EU_MKT:
+                        # Europe → ask exchange next
+                        st.session_state.sage_msgs.append({
+                            "role": "assistant",
+                            "content": "Which European exchange?",
+                            "wizard": "exchange"
+                        })
+                        st.session_state.sage_flow["step"] = "exchange"
+                    else:
+                        # Non-Europe → go straight to ticker
+                        _tcks = _tickers_for(_mkt_opt)
+                        st.session_state.sage_msgs.append({
+                            "role": "assistant",
+                            "content": f"Which ticker? ({len(_tcks)} available)",
+                            "wizard": "ticker",
+                            "ticker_list": _tcks
+                        })
+                        st.session_state.sage_flow["step"] = "ticker"
+                    st.rerun()
+
+        # ── Wizard: exchange buttons ────────────────────────────────────────
+        elif not _is_user and _msg.get("wizard") == "exchange" and _mi == len(_recent) - 1:
+            for _ex_opt in _ALL_EXCHANGES:
+                if st.button(_ex_opt, key=f"wiz_ex_{_ex_opt}_{_mi}",
+                             width='stretch', type="secondary"):
+                    st.session_state.sage_msgs.append({"role": "user", "content": _ex_opt})
+                    st.session_state.sage_flow = {**st.session_state.sage_flow, "exchange": _ex_opt}
+                    _tcks = _tickers_for(st.session_state.sage_flow["market"], _ex_opt)
+                    st.session_state.sage_msgs.append({
+                        "role": "assistant",
+                        "content": f"Which ticker? ({len(_tcks)} available)",
+                        "wizard": "ticker",
+                        "ticker_list": _tcks
+                    })
+                    st.session_state.sage_flow["step"] = "ticker"
+                    st.rerun()
+
+        # ── Wizard: ticker buttons ──────────────────────────────────────────
+        elif not _is_user and _msg.get("wizard") == "ticker" and _mi == len(_recent) - 1:
+            _tlist = _msg.get("ticker_list", [])
+            for _tk, _td, _tc in _tlist:
+                if st.button(f"{_td} — {_tc}", key=f"wiz_tk_{_tk}_{_mi}",
+                             width='stretch', type="secondary"):
+                    st.session_state.sage_msgs.append({"role": "user", "content": f"{_td} ({_tc})"})
+                    _rep, _ttup, _tkey = _resolve_and_fetch(_tk)
+                    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+                    if _ttup and _tkey:
+                        st.session_state.sage_tickers[_tkey] = _ttup
+                    st.session_state.sage_flow = None
+                    st.rerun()
+
+        # ── Open-in-analysis button after signal replies ────────────────────
+        if not _is_user and "wizard" not in _msg:
+            _abs_idx = len(st.session_state.sage_msgs) - len(_recent) + _mi
+            if _abs_idx in _ticker_by_msgidx:
+                _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
+                if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}_{_mi}",
+                             width='stretch', type="primary"):
+                    load_top_signals.clear()
+                    add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
+
+    # Clear + chat input
+    if st.session_state.sage_msgs:
+        st.divider()
+        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
+            st.session_state.sage_msgs    = []
+            st.session_state.sage_tickers = {}
+            st.session_state.sage_pick    = None
+            st.session_state.sage_flow    = None
+            st.rerun()
+
+    _inp = st.chat_input("Ask about markets or type a ticker…", key="sage_inp")
+    if _inp:
+        st.session_state.sage_pending = _inp
+        st.rerun()
+
     """Given a full _SK key, fetch signal and return (rep, ticker_tuple_or_None)."""
     _mkt, _exch, _dt, _co = _SK.get(ft_key, (None, None, ft_key, ft_key))
     _top = load_top_signals(n=20)
@@ -2217,100 +2485,3 @@ if st.session_state.sage_pending:
         st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
-# ── Render sidebar ────────────────────────────────────────────────────────────
-# Clean single-line base64 SVG — vivid blue/teal gradient, bright waveform, glowing dot
-_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSdiZycgeDE9JzAlJyB5MT0nMCUnIHgyPScxMDAlJyB5Mj0nMTAwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nIzFlNDBhZicvPjxzdG9wIG9mZnNldD0nNTAlJyBzdG9wLWNvbG9yPScjMGU3NDkwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPScjMGY0Yzc1Jy8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScyJyByZXN1bHQ9J2JsdXInLz48ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PGZpbHRlciBpZD0nc2cnIHg9Jy02MCUnIHk9Jy02MCUnIHdpZHRoPScyMjAlJyBoZWlnaHQ9JzIyMCUnPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249JzMuNScgcmVzdWx0PSdibHVyJy8+PGZlTWVyZ2U+PGZlTWVyZ2VOb2RlIGluPSdibHVyJy8+PGZlTWVyZ2VOb2RlIGluPSdTb3VyY2VHcmFwaGljJy8+PC9mZU1lcmdlPjwvZmlsdGVyPjwvZGVmcz48cmVjdCB3aWR0aD0nNzInIGhlaWdodD0nNzInIHJ4PScxNicgZmlsbD0ndXJsKCUyM2JnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE2JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzY3ZThmOScgc3Ryb2tlLXdpZHRoPScxLjInIG9wYWNpdHk9JzAuMzUnLz48cG9seWxpbmUgcG9pbnRzPSc0LDM4IDEwLDM4IDEzLDI1IDE3LDUxIDIxLDI3IDI1LDQ0IDI5LDIyIDMzLDQ4IDM3LDMwIDQxLDQzIDQ1LDM4IDUyLDM4IDU2LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyM2UwZjdmZicgc3Ryb2tlLXdpZHRoPScyLjQnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZ2xvdyknIG9wYWNpdHk9JzEnLz48Y2lyY2xlIGN4PSc1MicgY3k9JzM4JyByPSc0LjUnIGZpbGw9JyUyMzAwZTVmZicgZmlsdGVyPSd1cmwoJTIzc2cpJyBvcGFjaXR5PScxJy8+PGNpcmNsZSBjeD0nNTInIGN5PSczOCcgcj0nMi41JyBmaWxsPSd3aGl0ZScgb3BhY2l0eT0nMC45NScvPjx0ZXh0IHg9JzM2JyB5PSc2MycgdGV4dC1hbmNob3I9J21pZGRsZScgZm9udC1mYW1pbHk9J21vbm9zcGFjZScgZm9udC1zaXplPSc4LjUnIGZvbnQtd2VpZ2h0PSc4MDAnIGxldHRlci1zcGFjaW5nPSczLjUnIGZpbGw9JyUyM2UwZjdmZicgb3BhY2l0eT0nMC45Mic+U0FHRTwvdGV4dD48L3N2Zz4="
-
-# Migrate old 4-tuple ticker entries to 5-tuple
-for _k in list(st.session_state.sage_tickers.keys()):
-    _v = st.session_state.sage_tickers[_k]
-    if len(_v) == 4:
-        st.session_state.sage_tickers[_k] = (_v[0], _v[1], _v[2], _v[3], -1)
-
-with st.sidebar:
-    # ── Header ───────────────────────────────────────────────────────────────
-    st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.65rem;
-            padding:1rem 0.6rem 0.75rem;margin:-0.5rem -0.6rem 0.65rem;
-            border-bottom:1px solid rgba(56,189,248,0.15);
-            background:linear-gradient(135deg,#1a3a6e 0%,#0a2240 60%,#061829 100%);">
-  <img src="{_SAGE_URI}" width="40" height="40"
-       style="border-radius:10px;flex-shrink:0;display:block;"/>
-  <div style="min-width:0;line-height:1.1">
-    <div style="font-size:0.92rem;font-weight:800;color:#f1f5f9;
-                font-family:monospace;letter-spacing:2.5px;">SAGE</div>
-    <div style="font-size:0.64rem;color:#38bdf8;letter-spacing:0.5px;margin-top:2px;">
-      Signal Assistant</div>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-    # ── Quick question buttons (only when chat is empty) ──────────────────────
-    if not st.session_state.sage_msgs:
-        st.caption("Quick questions:")
-        for _sg in ["What's the strongest signal?",
-                    "Which markets are bearish?",
-                    "Top BUY signals right now",
-                    "High-confidence SELL signals?"]:
-            if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
-                st.session_state.sage_pending = _sg
-                st.rerun()
-
-    # ── Messages ──────────────────────────────────────────────────────────────
-    _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
-    _recent_msgs = st.session_state.sage_msgs[-30:]
-
-    for _mi, _msg in enumerate(_recent_msgs):
-        _is_user = _msg["role"] == "user"
-        _bg   = "rgba(30,41,59,0.7)"  if _is_user else "rgba(10,22,40,0.6)"
-        _br   = "12px 12px 3px 12px"  if _is_user else "12px 12px 12px 3px"
-        _ml   = "1.2rem" if _is_user else "0"
-        _mr   = "0"      if _is_user else "1.2rem"
-        _lbl  = "You"    if _is_user else "Sage"
-        _lclr = "#64748b" if _is_user else "#38bdf8"
-        _content = _msg["content"].replace("**", "").replace(chr(10), "<br>")
-        st.markdown(f"""
-<div style="margin-bottom:0.45rem;margin-left:{_ml};margin-right:{_mr}">
-  <div style="font-size:0.61rem;color:{_lclr};margin-bottom:2px;
-              text-align:{'right' if _is_user else 'left'};font-family:monospace;">{_lbl}</div>
-  <div style="background:{_bg};border-radius:{_br};padding:0.45rem 0.65rem;
-              font-size:0.79rem;line-height:1.55;color:#e2e8f0;
-              border:1px solid rgba(255,255,255,0.07);">{_content}</div>
-</div>""", unsafe_allow_html=True)
-
-        # Picker buttons — shown inline after disambiguation messages
-        if not _is_user and "picker" in _msg:
-            for _pk in _msg["picker"]:
-                _pm, _pe, _pd, _pc = _SK.get(_pk, (None, None, _pk, _pk))
-                _exname = _pe or _pm or "?"
-                _flag_p = _exname.split(" ")[0]
-                _btn_lbl = f"{_flag_p} {_pd} — {_pc} ({_exname})"
-                if st.button(_btn_lbl, key=f"pick_{_pk}_{_mi}", width='stretch', type="secondary"):
-                    _rep2, _ttup2, _tkey2 = _resolve_and_fetch(_pk)
-                    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
-                    if _ttup2 and _tkey2:
-                        st.session_state.sage_tickers[_tkey2] = _ttup2
-                    st.rerun()
-
-        # Open-in-analysis button after ticker signal messages
-        if not _is_user and "picker" not in _msg:
-            _abs_idx = len(st.session_state.sage_msgs) - len(_recent_msgs) + _mi
-            if _abs_idx in _ticker_by_msgidx:
-                _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
-                if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}_{_mi}",
-                             width='stretch', type="primary"):
-                    load_top_signals.clear()
-                    add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
-
-    # ── Clear + input ─────────────────────────────────────────────────────────
-    if st.session_state.sage_msgs:
-        st.divider()
-        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
-            st.session_state.sage_msgs    = []
-            st.session_state.sage_tickers = {}
-            st.session_state.sage_pick    = None
-            st.rerun()
-
-    _inp = st.chat_input("Ask about a stock or market…", key="sage_inp")
-    if _inp:
-        st.session_state.sage_pending = _inp
-        st.rerun()
