@@ -1981,11 +1981,45 @@ for _ex, _ecfg in EU_EXCHANGES.items():
         _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
 
 def _sk_find(msg: str) -> list:
+    """Find tickers mentioned in a message.
+    Matches: full keys (BMW.DE), bare roots (BMW), display names (ING→INGA.AS).
+    Returns list of full ticker keys that are in _SK."""
+    words = [w.strip(".,!?()[]'\"") for w in msg.upper().split()]
     found = []
-    for w in msg.upper().split():
-        w = w.strip(".,!?()[]'\"")
+
+    # 1. Direct full-key match (e.g. "BMW.DE", "INGA.AS")
+    for w in words:
         if w in _SK and w not in found:
             found.append(w)
+
+    # 2. Bare root match — find _SK keys whose root (before the dot) matches
+    #    If multiple exchanges have the same root, collect all (ambiguous)
+    if not found:
+        root_map: dict = {}  # root → [full_key, ...]
+        for key in _SK:
+            root = key.split(".")[0]
+            root_map.setdefault(root, []).append(key)
+        for w in words:
+            if w in root_map and not any(k in found for k in root_map[w]):
+                for k in root_map[w]:
+                    if k not in found:
+                        found.append(k)
+
+    # 3. Display-name / company-name match (e.g. "ING" → INGA.AS, "SHELL" → SHEL.L)
+    if not found:
+        name_map: dict = {}  # uppercased name word → full_key
+        for key, val in _SK.items():
+            _nm = val[3].upper()  # company name
+            for part in _nm.split():
+                part = part.strip(".,")
+                if len(part) >= 3:
+                    name_map.setdefault(part, []).append(key)
+        for w in words:
+            if len(w) >= 3 and w in name_map:
+                for k in name_map[w]:
+                    if k not in found:
+                        found.append(k)
+
     return found
 
 def _sig_from_df(ft, df):
@@ -2118,36 +2152,55 @@ if st.session_state.sage_pending:
     _hits = _sk_find(_pend)
 
     if _hits:
-        _ft = _hits[0]
-        _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
-        _sig = _sig_from_df(_ft, _top)
-        if not _sig and _mkt:
-            with st.spinner(f"Fetching live signal for {_dt}…"):
-                _sig = _live_sig(_ft, _mkt, _exch)
-        if _sig and _mkt:
-            import pytz as _ptz2
-            _is_up = _sig["predicted"] == 1
-            _s     = _sig["sentiment"]
-            _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
-            try:
-                _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
-            except Exception:
-                _sc = 0
-            _age   = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
-            _flag  = (_exch or _mkt or "").split(" ")[0]
-            _src   = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
-            _rep   = (f"**{_flag} {_dt}** ({_co})\n\n"
-                      f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
-                     f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
-            # Tag this ticker to the index of the assistant message about to be appended
-            _next_idx = len(st.session_state.sage_msgs) + 1  # +1 because user msg goes first
-            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
-        elif _mkt:
-            _rep = f"No pre-computed signal for **{_dt}**. Click Open below to run a live analysis."
-            _next_idx = len(st.session_state.sage_msgs) + 1
-            st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
+        _unique_roots = set(h.split(".")[0] for h in _hits)
+
+        if len(_unique_roots) == 1 and len(_hits) > 1:
+            # Same bare root, multiple exchanges — ask user to pick
+            _root = list(_unique_roots)[0]
+            _options = []
+            for _h in _hits:
+                _hm, _he, _hd, _hco = _SK.get(_h, (None, None, _h, _h))
+                _options.append(f"**{_hd}** on {_he or _hm} (`{_h}`) — {_hco}")
+            _rep = (f"**{_root}** trades on multiple exchanges. Which did you mean?\n\n" +
+                    "\n".join(f"• {o}" for o in _options) +
+                    f"\n\nReply with the full ticker e.g. `{_hits[0]}`.")
+            st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
         else:
-            _rep = f"**{_ft}** isn't in our tracked ticker list."
+            _ft = _hits[0]
+            _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
+            _sig = _sig_from_df(_ft, _top)
+            if not _sig and _mkt:
+                with st.spinner(f"Fetching live signal for {_dt}…"):
+                    _sig = _live_sig(_ft, _mkt, _exch)
+            if _sig and _mkt:
+                import pytz as _ptz2
+                _is_up = _sig["predicted"] == 1
+                _s     = _sig["sentiment"]
+                _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
+                try:
+                    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
+                except Exception:
+                    _sc = 0
+                _age     = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+                _flag    = (_exch or _mkt or "").split(" ")[0]
+                _src     = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
+                _exlabel = f" ({_exch})" if _exch else f" ({_mkt})"
+                _rep     = (f"**{_flag} {_dt}**{_exlabel} — {_co}\n\n"
+                            f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
+                            f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
+                _next_idx = len(st.session_state.sage_msgs) + 1
+                st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
+            elif _mkt:
+                _exlabel = f" on {_exch}" if _exch else f" ({_mkt})"
+                _rep = (f"No pre-computed signal for **{_dt}**{_exlabel}. "
+                        f"Click Open below to run a live analysis.")
+                _next_idx = len(st.session_state.sage_msgs) + 1
+                st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
+            else:
+                _rep = f"**{_ft}** isn't in our tracked ticker list."
+            st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
     else:
         _ctx = []
         if _top is not None and not _top.empty:
@@ -2159,12 +2212,11 @@ if st.session_state.sage_pending:
                 f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
                 for mk, d in _sent.items()))
         _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
-
-    st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
-    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+        st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
 # ── Render sidebar ────────────────────────────────────────────────────────────
-_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdnJyBjeD0nNTAlJyBjeT0nNTAlJyByPSc1MCUnPjxzdG9wIG9mZnNldD0nMCUnIHN0b3AtY29sb3I9JyUyMzA4MjA0MCcvPjxzdG9wIG9mZnNldD0nMTAwJScgc3RvcC1jb2xvcj0nJTIzMDUwZjFmJy8+PC9yYWRpYWxHcmFkaWVudD48ZmlsdGVyIGlkPSdmJyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScxJyBvcGFjaXR5PScwLjMnLz48cG9seWxpbmUgcG9pbnRzPSc2LDM4IDEyLDM4IDE1LDI2IDE4LjUsNTAgMjIsMjggMjUuNSw0NCAyOSwyMyAzMi41LDQ3IDM2LDMwIDM5LDQyIDQyLDM4IDQ4LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScyLjInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZiknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSczJyBmaWxsPSclMjMzOGJkZjgnIGZpbHRlcj0ndXJsKCUyM2YpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nNicgZmlsbD0nJTIzMzhiZGY4JyBvcGFjaXR5PScwLjEyJy8+PHRleHQgeD0nMzYnIHk9JzYyJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmb250LWZhbWlseT0nbW9ub3NwYWNlJyBmb250LXNpemU9JzknIGZvbnQtd2VpZ2h0PSc3MDAnIGxldHRlci1zcGFjaW5nPSczJyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuOSc+U0FHRTwvdGV4dD48L3N2Zz4="
+_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9J2JnJyB4MT0nMCUnIHkxPScwJScgeDI9JzEwMCUnIHkyPScxMDAlJz4KICAgICAgPHN0b3Agb2Zmc2V0PScwJScgICBzdG9wLWNvbG9yPScjMWU0MGFmJy8+CiAgICAgIDxzdG9wIG9mZnNldD0nNTAlJyAgc3RvcC1jb2xvcj0nIzBlNzQ5MCcvPgogICAgICA8c3RvcCBvZmZzZXQ9JzEwMCUnIHN0b3AtY29sb3I9JyMwZjRjNzUnLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0nMicgcmVzdWx0PSdibHVyJy8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogICAgPGZpbHRlciBpZD0nc29mdGdsb3cnIHg9Jy02MCUnIHk9Jy02MCUnIHdpZHRoPScyMjAlJyBoZWlnaHQ9JzIyMCUnPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSczLjUnIHJlc3VsdD0nYmx1cicvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTYnIGZpbGw9J3VybCglMjNiZyknLz4KICA8cmVjdCB3aWR0aD0nNzInIGhlaWdodD0nNzInIHJ4PScxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSclMjM2N2U4ZjknIHN0cm9rZS13aWR0aD0nMS4yJyBvcGFjaXR5PScwLjM1Jy8+CiAgPHBvbHlsaW5lCiAgICBwb2ludHM9JzQsMzggMTAsMzggMTMsMjUgMTcsNTEgMjEsMjcgMjUsNDQgMjksMjIgMzMsNDggMzcsMzAgNDEsNDMgNDUsMzggNTIsMzggNTYsMzgnCiAgICBmaWxsPSdub25lJyBzdHJva2U9JyUyM2UwZjdmZicgc3Ryb2tlLXdpZHRoPScyLjQnCiAgICBzdHJva2UtbGluZWNhcD0ncm91bmQnIHN0cm9rZS1saW5lam9pbj0ncm91bmQnCiAgICBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPgogIDxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzQuNScgZmlsbD0nJTIzMDBlNWZmJyBmaWx0ZXI9J3VybCglMjNzb2Z0Z2xvdyknIG9wYWNpdHk9JzEnLz4KICA8Y2lyY2xlIGN4PSc1MicgY3k9JzM4JyByPScyLjUnIGZpbGw9J3doaXRlJyBvcGFjaXR5PScwLjk1Jy8+CiAgPHRleHQgeD0nMzYnIHk9JzYzJwogICAgdGV4dC1hbmNob3I9J21pZGRsZScgZm9udC1mYW1pbHk9J21vbm9zcGFjZScgZm9udC1zaXplPSc4LjUnCiAgICBmb250LXdlaWdodD0nODAwJyBsZXR0ZXItc3BhY2luZz0nMy41JwogICAgZmlsbD0nJTIzZTBmN2ZmJyBvcGFjaXR5PScwLjkyJz5TQUdFPC90ZXh0Pgo8L3N2Zz4="
 
 # Migrate old 4-tuple ticker entries to 5-tuple (guard against stale session state)
 for _k in list(st.session_state.sage_tickers.keys()):
