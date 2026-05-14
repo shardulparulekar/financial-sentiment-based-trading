@@ -1883,6 +1883,83 @@ else:
 # SAGE — Persistent right-side chat assistant
 # ══════════════════════════════════════════════════════════════════════════════
 
+st.markdown("""
+<style>
+/* ── Move sidebar to RIGHT ──────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    left: auto !important; right: 0 !important;
+    width: 280px !important; min-width: 280px !important; max-width: 280px !important;
+    background: #080f1e !important;
+    border-left: 1px solid rgba(56,189,248,0.18) !important;
+    border-right: none !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: #080f1e !important;
+    padding-top: 0 !important;
+    padding-left: 0.6rem !important; padding-right: 0.6rem !important;
+    overflow-y: auto !important;
+}
+/* ── Hide collapse button + kill "keyboard_double_arrow_left" text leak ── */
+/* Target every possible selector Streamlit 1.57 uses */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+button[data-testid="baseButton-headerNoPadding"],
+section[data-testid="stSidebar"] > div > div > div > button,
+.stSidebar button[kind="header"] {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important; height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+/* Sidebar stays expanded even if aria-expanded flips */
+[data-testid="stSidebar"][aria-expanded="false"] {
+    width: 280px !important; min-width: 280px !important;
+    transform: none !important; display: block !important;
+}
+[data-testid="stMain"] { overflow-x: hidden !important; }
+
+/* ── Chat messages — replace "ace"/"art_" avatar text with clean dots ─── */
+[data-testid="stSidebar"] [data-testid="stChatMessage"] {
+    background: transparent !important;
+    padding: 0.2rem 0 0.1rem !important;
+    gap: 0.4rem !important;
+}
+/* Hide the avatar icon area entirely */
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
+[data-testid="stSidebar"] [class*="avatarIcon"],
+[data-testid="stSidebar"] [class*="Avatar"] {
+    display: none !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatMessage"] p {
+    font-size: 0.8rem !important; line-height: 1.55 !important;
+}
+/* User messages — right-aligned pill style */
+[data-testid="stSidebar"] [data-testid="stChatMessage"]:has(> div[data-testid="stMarkdown"]) {
+    flex-direction: row-reverse !important;
+}
+
+/* ── Chat input ──────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
+    background: #0c1824 !important;
+    border: 1px solid rgba(56,189,248,0.25) !important;
+    color: #f1f5f9 !important; font-size: 0.8rem !important;
+    border-radius: 10px !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatInput"] button {
+    background: rgba(56,189,248,0.15) !important;
+    border: 1px solid rgba(56,189,248,0.3) !important;
+    color: #38bdf8 !important;
+}
+/* ── Sidebar buttons ─────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] .stButton > button {
+    font-size: 0.75rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
 if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
@@ -1920,18 +1997,45 @@ def _sig_from_df(ft, df):
             "sentiment": float(r["sentiment"]), "updated_at": r["updated_at"]}
 
 def _live_sig(ft, mkt, exch):
+    """Try FinBERT pipeline first; fall back to yfinance price momentum signal."""
+    # ── Attempt 1: Full FinBERT pipeline ──────────────────────────────────────
     try:
         from src.data_ingestion      import DataIngestion
         from src.sentiment_model     import SentimentModel
         from src.feature_engineering import FeatureEngineer
-        import pytz as _ptz
         arts = DataIngestion().fetch_news(ft, market=mkt, exchange=exch)
         sc   = SentimentModel().score_articles(arts) if arts else []
         fe   = FeatureEngineer().build_features(sc)  if sc   else None
-        if fe is None or fe.empty: return None
-        s = float(fe.iloc[-1].get("mean_score", 0))
-        return {"predicted": 1 if s > 0 else -1, "confidence": min(abs(s)*2+0.5, 0.99),
-                "sentiment": s, "updated_at": datetime.now(__import__("pytz").utc), "live": True}
+        if fe is not None and not fe.empty:
+            s = float(fe.iloc[-1].get("mean_score", 0))
+            return {"predicted": 1 if s > 0 else -1, "confidence": min(abs(s)*2+0.5, 0.99),
+                    "sentiment": s, "updated_at": datetime.now(__import__("pytz").utc), "live": True}
+    except Exception:
+        pass
+    # ── Attempt 2: yfinance price-momentum fallback ───────────────────────────
+    try:
+        import yfinance as _yf, datetime as _dt2
+        # Build full ticker symbol (add market suffix if needed)
+        _sfx = ""
+        if mkt and "🇪🇺" in str(mkt) and exch:
+            _sfx = EU_EXCHANGES.get(exch, {}).get("suffix", "")
+        _sym = ft if ft.endswith(_sfx) else ft + _sfx
+        _hist = _yf.Ticker(_sym).history(period="10d", interval="1d")
+        if _hist is None or _hist.empty:
+            return None
+        _closes = _hist["Close"].dropna()
+        if len(_closes) < 3:
+            return None
+        # Simple 5-day vs 1-day momentum as sentiment proxy
+        _ret5 = float((_closes.iloc[-1] - _closes.iloc[0]) / _closes.iloc[0])
+        _ret1 = float((_closes.iloc[-1] - _closes.iloc[-2]) / _closes.iloc[-2])
+        _s    = (_ret5 * 0.6 + _ret1 * 0.4)   # weighted composite
+        _s    = max(-1.0, min(1.0, _s * 10))   # scale to [-1, 1]
+        _conf = min(0.5 + abs(_s) * 0.35, 0.88)
+        _now  = _dt2.datetime.now(_dt2.timezone.utc)
+        return {"predicted": 1 if _s >= 0 else -1, "confidence": _conf,
+                "sentiment": round(_s, 4),
+                "updated_at": _now, "live": True, "source": "price"}
     except Exception:
         return None
 
@@ -2029,12 +2133,12 @@ if st.session_state.sage_pending:
                 _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
             except Exception:
                 _sc = 0
-            _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
-            _flag = (_exch or _mkt or "").split(" ")[0]
-            _live = " · live" if _sig.get("live") else ""
-            _rep  = (f"**{_flag} {_dt}** ({_co})\n\n"
-                     f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
-                     f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_live}")
+            _age   = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+            _flag  = (_exch or _mkt or "").split(" ")[0]
+            _src   = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
+            _rep   = (f"**{_flag} {_dt}** ({_co})\n\n"
+                      f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
+                     f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
             # Tag this ticker to the index of the assistant message about to be appended
             _next_idx = len(st.session_state.sage_msgs) + 1  # +1 because user msg goes first
             st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
@@ -2062,24 +2166,32 @@ if st.session_state.sage_pending:
 # ── Render sidebar ────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PHJhZGlhbEdyYWRpZW50IGlkPSdnJyBjeD0nNTAlJyBjeT0nNTAlJyByPSc1MCUnPjxzdG9wIG9mZnNldD0nMCUnIHN0b3AtY29sb3I9JyUyMzA4MjA0MCcvPjxzdG9wIG9mZnNldD0nMTAwJScgc3RvcC1jb2xvcj0nJTIzMDUwZjFmJy8+PC9yYWRpYWxHcmFkaWVudD48ZmlsdGVyIGlkPSdmJyB4PSctMzAlJyB5PSctMzAlJyB3aWR0aD0nMTYwJScgaGVpZ2h0PScxNjAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScxLjUnIHJlc3VsdD0nYicvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT48L2ZpbHRlcj48L2RlZnM+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTgnIGZpbGw9J3VybCglMjNnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScxJyBvcGFjaXR5PScwLjMnLz48cG9seWxpbmUgcG9pbnRzPSc2LDM4IDEyLDM4IDE1LDI2IDE4LjUsNTAgMjIsMjggMjUuNSw0NCAyOSwyMyAzMi41LDQ3IDM2LDMwIDM5LDQyIDQyLDM4IDQ4LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzM4YmRmOCcgc3Ryb2tlLXdpZHRoPScyLjInIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZiknIG9wYWNpdHk9JzAuOTUnLz48Y2lyY2xlIGN4PSc0OCcgY3k9JzM4JyByPSczJyBmaWxsPSclMjMzOGJkZjgnIGZpbHRlcj0ndXJsKCUyM2YpJyBvcGFjaXR5PScwLjk1Jy8+PGNpcmNsZSBjeD0nNDgnIGN5PSczOCcgcj0nNicgZmlsbD0nJTIzMzhiZGY4JyBvcGFjaXR5PScwLjEyJy8+PHRleHQgeD0nMzYnIHk9JzYyJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmb250LWZhbWlseT0nbW9ub3NwYWNlJyBmb250LXNpemU9JzknIGZvbnQtd2VpZ2h0PSc3MDAnIGxldHRlci1zcGFjaW5nPSczJyBmaWxsPSclMjMzOGJkZjgnIG9wYWNpdHk9JzAuOSc+U0FHRTwvdGV4dD48L3N2Zz4="
 
+# Migrate old 4-tuple ticker entries to 5-tuple (guard against stale session state)
+for _k in list(st.session_state.sage_tickers.keys()):
+    _v = st.session_state.sage_tickers[_k]
+    if len(_v) == 4:
+        st.session_state.sage_tickers[_k] = (_v[0], _v[1], _v[2], _v[3], -1)
+
 with st.sidebar:
-    # Header — padded so icon never clips at top
+    # ── Header: icon + SAGE title ─────────────────────────────────────────────
     st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.6rem;
-            padding:0.8rem 0.6rem 0.65rem;
+<div style="display:flex;align-items:center;gap:0.65rem;
+            padding:1rem 0.6rem 0.75rem;
             margin:-0.5rem -0.6rem 0.6rem;
             border-bottom:1px solid rgba(56,189,248,0.15);
-            background:linear-gradient(135deg,#0c1f3d,#080f1e);">
-  <img src="{_SAGE_URI}" style="width:38px;height:38px;border-radius:10px;
-       flex-shrink:0;display:block;object-fit:contain;"/>
-  <div style="min-width:0">
-    <div style="font-size:0.88rem;font-weight:700;color:#f1f5f9;
-                font-family:monospace;letter-spacing:1.5px;line-height:1.2">SAGE</div>
-    <div style="font-size:0.63rem;color:#38bdf8;line-height:1.3">Signal Assistant</div>
+            background:linear-gradient(135deg,#0c1f3d 0%,#080f1e 100%);">
+  <img src="{_SAGE_URI}"
+       style="width:40px;height:40px;border-radius:10px;flex-shrink:0;
+              display:block;overflow:hidden;background:#0d1f3a;"/>
+  <div style="min-width:0;line-height:1">
+    <div style="font-size:0.9rem;font-weight:700;color:#f1f5f9;
+                font-family:monospace;letter-spacing:2px;margin-bottom:3px;">SAGE</div>
+    <div style="font-size:0.65rem;color:#38bdf8;letter-spacing:0.5px;">Signal Assistant</div>
   </div>
 </div>
     """, unsafe_allow_html=True)
 
+    # ── Quick question buttons (only when chat is empty) ──────────────────────
     if not st.session_state.sage_msgs:
         st.caption("Quick questions:")
         for _sg in ["What's the strongest signal?",
@@ -2090,14 +2202,30 @@ with st.sidebar:
                 st.session_state.sage_pending = _sg
                 st.rerun()
 
-    # Render messages — Open button appears right after the relevant assistant message
-    _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items()}
+    # ── Messages — pure HTML (no st.chat_message avatars) ────────────────────
+    _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
     _recent_msgs = st.session_state.sage_msgs[-30:]
     for _mi, _msg in enumerate(_recent_msgs):
-        with st.chat_message(_msg["role"]):
-            st.markdown(_msg["content"])
-        # Show Open button inline with the assistant reply that contains this ticker
-        if _msg["role"] == "assistant":
+        _is_user = _msg["role"] == "user"
+        _bg   = "rgba(30,41,59,0.6)"  if _is_user else "rgba(12,24,40,0.5)"
+        _br   = "12px 12px 3px 12px"  if _is_user else "12px 12px 12px 3px"
+        _ml   = "1.5rem" if _is_user else "0"
+        _mr   = "0"      if _is_user else "1.5rem"
+        _lbl  = "You" if _is_user else "Sage"
+        _lclr = "#64748b" if _is_user else "#38bdf8"
+        st.markdown(f"""
+<div style="margin-bottom:0.5rem;margin-left:{_ml};margin-right:{_mr}">
+  <div style="font-size:0.62rem;color:{_lclr};margin-bottom:2px;
+              text-align:{'right' if _is_user else 'left'};
+              font-family:monospace;letter-spacing:0.5px;">{_lbl}</div>
+  <div style="background:{_bg};border-radius:{_br};
+              padding:0.5rem 0.7rem;font-size:0.8rem;line-height:1.55;
+              color:#e2e8f0;border:1px solid rgba(255,255,255,0.06);">
+    {_msg["content"].replace(chr(10), "<br>")}
+  </div>
+</div>""", unsafe_allow_html=True)
+        # Open button right after relevant assistant message
+        if not _is_user:
             _abs_idx = len(st.session_state.sage_msgs) - len(_recent_msgs) + _mi
             if _abs_idx in _ticker_by_msgidx:
                 _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
@@ -2106,6 +2234,7 @@ with st.sidebar:
                     load_top_signals.clear()
                     add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
+    # ── Clear + chat input ────────────────────────────────────────────────────
     if st.session_state.sage_msgs:
         st.divider()
         if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
