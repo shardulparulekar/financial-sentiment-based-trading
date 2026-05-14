@@ -1964,6 +1964,8 @@ section[data-testid="stSidebar"] > div > div > div > button,
 if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
 if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
 if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
+# sage_pick: dict with keys "stage","raw","candidates" — drives guided flow
+if "sage_pick"    not in st.session_state: st.session_state.sage_pick    = None
 
 # ── Ticker lookup ─────────────────────────────────────────────────────────────
 _SK: dict = {}
@@ -2144,65 +2146,65 @@ def _hf_call(msgs, ctx):
         return _synth_answer(msgs, ctx)
 
 # ── Process pending message (runs before sidebar renders) ─────────────────────
+def _resolve_and_fetch(ft_key):
+    """Given a full _SK key, fetch signal and return (rep, ticker_tuple_or_None)."""
+    _mkt, _exch, _dt, _co = _SK.get(ft_key, (None, None, ft_key, ft_key))
+    _top = load_top_signals(n=20)
+    _sig = _sig_from_df(ft_key, _top)
+    if not _sig and _mkt:
+        with st.spinner(f"Fetching live signal for {_dt}…"):
+            _sig = _live_sig(ft_key, _mkt, _exch)
+    if _sig and _mkt:
+        import pytz as _ptz2
+        _is_up = _sig["predicted"] == 1
+        _s     = _sig["sentiment"]
+        _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
+        try:    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
+        except: _sc = 0
+        _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+        _flag = (_exch or _mkt or "").split(" ")[0]
+        _src  = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
+        _exlb = f" ({_exch})" if _exch else f" ({_mkt})"
+        _rep  = (f"**{_flag} {_dt}**{_exlb} — {_co}\n\n"
+                 f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
+                 f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
+        _next = len(st.session_state.sage_msgs) + 1
+        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
+    elif _mkt:
+        _exlb = f" on {_exch}" if _exch else f" ({_mkt})"
+        _rep  = f"No pre-computed signal for **{_dt}**{_exlb}. Click Open below to run a live analysis."
+        _next = len(st.session_state.sage_msgs) + 1
+        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
+    else:
+        return f"**{ft_key}** isn't in our tracked ticker list.", None, None
+
 if st.session_state.sage_pending:
     _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
-    _top  = load_top_signals(n=20)
-    _sent = load_market_sentiment()
     _hits = _sk_find(_pend)
 
     if _hits:
         _unique_roots = set(h.split(".")[0] for h in _hits)
-
-        if len(_unique_roots) == 1 and len(_hits) > 1:
-            # Same bare root, multiple exchanges — ask user to pick
-            _root = list(_unique_roots)[0]
-            _options = []
-            for _h in _hits:
-                _hm, _he, _hd, _hco = _SK.get(_h, (None, None, _h, _h))
-                _options.append(f"**{_hd}** on {_he or _hm} (`{_h}`) — {_hco}")
-            _rep = (f"**{_root}** trades on multiple exchanges. Which did you mean?\n\n" +
-                    "\n".join(f"• {o}" for o in _options) +
-                    f"\n\nReply with the full ticker e.g. `{_hits[0]}`.")
+        if len(_hits) == 1:
+            # Unambiguous — resolve immediately
+            _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
             st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
             st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+            if _ttup and _tkey:
+                st.session_state.sage_tickers[_tkey] = _ttup
         else:
-            _ft = _hits[0]
-            _mkt, _exch, _dt, _co = _SK.get(_ft, (None, None, _ft, _ft))
-            _sig = _sig_from_df(_ft, _top)
-            if not _sig and _mkt:
-                with st.spinner(f"Fetching live signal for {_dt}…"):
-                    _sig = _live_sig(_ft, _mkt, _exch)
-            if _sig and _mkt:
-                import pytz as _ptz2
-                _is_up = _sig["predicted"] == 1
-                _s     = _sig["sentiment"]
-                _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
-                try:
-                    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
-                except Exception:
-                    _sc = 0
-                _age     = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
-                _flag    = (_exch or _mkt or "").split(" ")[0]
-                _src     = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
-                _exlabel = f" ({_exch})" if _exch else f" ({_mkt})"
-                _rep     = (f"**{_flag} {_dt}**{_exlabel} — {_co}\n\n"
-                            f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
-                            f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
-                _next_idx = len(st.session_state.sage_msgs) + 1
-                st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
-            elif _mkt:
-                _exlabel = f" on {_exch}" if _exch else f" ({_mkt})"
-                _rep = (f"No pre-computed signal for **{_dt}**{_exlabel}. "
-                        f"Click Open below to run a live analysis.")
-                _next_idx = len(st.session_state.sage_msgs) + 1
-                st.session_state.sage_tickers[_ft] = (_mkt, _exch, _dt, _co, _next_idx)
-            else:
-                _rep = f"**{_ft}** isn't in our tracked ticker list."
-            st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
-            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+            # Multiple candidates — store them for button-based picker in sidebar
+            st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": f"Found **{len(_hits)}** matches. Pick one:",
+                "picker": _hits   # list of full _SK keys to show as buttons
+            })
     else:
-        _ctx = []
+        # No ticker found — general question
+        _top  = load_top_signals(n=20)
+        _sent = load_market_sentiment()
+        _ctx  = []
         if _top is not None and not _top.empty:
             _ctx.append("Signals: " + ", ".join(
                 f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
@@ -2216,68 +2218,81 @@ if st.session_state.sage_pending:
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
 # ── Render sidebar ────────────────────────────────────────────────────────────
-_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9J2JnJyB4MT0nMCUnIHkxPScwJScgeDI9JzEwMCUnIHkyPScxMDAlJz4KICAgICAgPHN0b3Agb2Zmc2V0PScwJScgICBzdG9wLWNvbG9yPScjMWU0MGFmJy8+CiAgICAgIDxzdG9wIG9mZnNldD0nNTAlJyAgc3RvcC1jb2xvcj0nIzBlNzQ5MCcvPgogICAgICA8c3RvcCBvZmZzZXQ9JzEwMCUnIHN0b3AtY29sb3I9JyMwZjRjNzUnLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0nMicgcmVzdWx0PSdibHVyJy8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0nYmx1cicvPjxmZU1lcmdlTm9kZSBpbj0nU291cmNlR3JhcGhpYycvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogICAgPGZpbHRlciBpZD0nc29mdGdsb3cnIHg9Jy02MCUnIHk9Jy02MCUnIHdpZHRoPScyMjAlJyBoZWlnaHQ9JzIyMCUnPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSczLjUnIHJlc3VsdD0nYmx1cicvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTYnIGZpbGw9J3VybCglMjNiZyknLz4KICA8cmVjdCB3aWR0aD0nNzInIGhlaWdodD0nNzInIHJ4PScxNicgZmlsbD0nbm9uZScgc3Ryb2tlPSclMjM2N2U4ZjknIHN0cm9rZS13aWR0aD0nMS4yJyBvcGFjaXR5PScwLjM1Jy8+CiAgPHBvbHlsaW5lCiAgICBwb2ludHM9JzQsMzggMTAsMzggMTMsMjUgMTcsNTEgMjEsMjcgMjUsNDQgMjksMjIgMzMsNDggMzcsMzAgNDEsNDMgNDUsMzggNTIsMzggNTYsMzgnCiAgICBmaWxsPSdub25lJyBzdHJva2U9JyUyM2UwZjdmZicgc3Ryb2tlLXdpZHRoPScyLjQnCiAgICBzdHJva2UtbGluZWNhcD0ncm91bmQnIHN0cm9rZS1saW5lam9pbj0ncm91bmQnCiAgICBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPgogIDxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzQuNScgZmlsbD0nJTIzMDBlNWZmJyBmaWx0ZXI9J3VybCglMjNzb2Z0Z2xvdyknIG9wYWNpdHk9JzEnLz4KICA8Y2lyY2xlIGN4PSc1MicgY3k9JzM4JyByPScyLjUnIGZpbGw9J3doaXRlJyBvcGFjaXR5PScwLjk1Jy8+CiAgPHRleHQgeD0nMzYnIHk9JzYzJwogICAgdGV4dC1hbmNob3I9J21pZGRsZScgZm9udC1mYW1pbHk9J21vbm9zcGFjZScgZm9udC1zaXplPSc4LjUnCiAgICBmb250LXdlaWdodD0nODAwJyBsZXR0ZXItc3BhY2luZz0nMy41JwogICAgZmlsbD0nJTIzZTBmN2ZmJyBvcGFjaXR5PScwLjkyJz5TQUdFPC90ZXh0Pgo8L3N2Zz4="
+# Clean single-line base64 SVG — vivid blue/teal gradient, bright waveform, glowing dot
+_SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSdiZycgeDE9JzAlJyB5MT0nMCUnIHgyPScxMDAlJyB5Mj0nMTAwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nIzFlNDBhZicvPjxzdG9wIG9mZnNldD0nNTAlJyBzdG9wLWNvbG9yPScjMGU3NDkwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPScjMGY0Yzc1Jy8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScyJyByZXN1bHQ9J2JsdXInLz48ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PGZpbHRlciBpZD0nc2cnIHg9Jy02MCUnIHk9Jy02MCUnIHdpZHRoPScyMjAlJyBoZWlnaHQ9JzIyMCUnPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249JzMuNScgcmVzdWx0PSdibHVyJy8+PGZlTWVyZ2U+PGZlTWVyZ2VOb2RlIGluPSdibHVyJy8+PGZlTWVyZ2VOb2RlIGluPSdTb3VyY2VHcmFwaGljJy8+PC9mZU1lcmdlPjwvZmlsdGVyPjwvZGVmcz48cmVjdCB3aWR0aD0nNzInIGhlaWdodD0nNzInIHJ4PScxNicgZmlsbD0ndXJsKCUyM2JnKScvPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE2JyBmaWxsPSdub25lJyBzdHJva2U9JyUyMzY3ZThmOScgc3Ryb2tlLXdpZHRoPScxLjInIG9wYWNpdHk9JzAuMzUnLz48cG9seWxpbmUgcG9pbnRzPSc0LDM4IDEwLDM4IDEzLDI1IDE3LDUxIDIxLDI3IDI1LDQ0IDI5LDIyIDMzLDQ4IDM3LDMwIDQxLDQzIDQ1LDM4IDUyLDM4IDU2LDM4JyBmaWxsPSdub25lJyBzdHJva2U9JyUyM2UwZjdmZicgc3Ryb2tlLXdpZHRoPScyLjQnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgZmlsdGVyPSd1cmwoJTIzZ2xvdyknIG9wYWNpdHk9JzEnLz48Y2lyY2xlIGN4PSc1MicgY3k9JzM4JyByPSc0LjUnIGZpbGw9JyUyMzAwZTVmZicgZmlsdGVyPSd1cmwoJTIzc2cpJyBvcGFjaXR5PScxJy8+PGNpcmNsZSBjeD0nNTInIGN5PSczOCcgcj0nMi41JyBmaWxsPSd3aGl0ZScgb3BhY2l0eT0nMC45NScvPjx0ZXh0IHg9JzM2JyB5PSc2MycgdGV4dC1hbmNob3I9J21pZGRsZScgZm9udC1mYW1pbHk9J21vbm9zcGFjZScgZm9udC1zaXplPSc4LjUnIGZvbnQtd2VpZ2h0PSc4MDAnIGxldHRlci1zcGFjaW5nPSczLjUnIGZpbGw9JyUyM2UwZjdmZicgb3BhY2l0eT0nMC45Mic+U0FHRTwvdGV4dD48L3N2Zz4="
 
-# Migrate old 4-tuple ticker entries to 5-tuple (guard against stale session state)
+# Migrate old 4-tuple ticker entries to 5-tuple
 for _k in list(st.session_state.sage_tickers.keys()):
     _v = st.session_state.sage_tickers[_k]
     if len(_v) == 4:
         st.session_state.sage_tickers[_k] = (_v[0], _v[1], _v[2], _v[3], -1)
 
 with st.sidebar:
-    # ── Header: icon + SAGE title ─────────────────────────────────────────────
+    # ── Header ───────────────────────────────────────────────────────────────
     st.markdown(f"""
 <div style="display:flex;align-items:center;gap:0.65rem;
-            padding:1rem 0.6rem 0.75rem;
-            margin:-0.5rem -0.6rem 0.6rem;
+            padding:1rem 0.6rem 0.75rem;margin:-0.5rem -0.6rem 0.65rem;
             border-bottom:1px solid rgba(56,189,248,0.15);
-            background:linear-gradient(135deg,#0c1f3d 0%,#080f1e 100%);">
-  <img src="{_SAGE_URI}"
-       style="width:40px;height:40px;border-radius:10px;flex-shrink:0;
-              display:block;overflow:hidden;background:#0d1f3a;"/>
-  <div style="min-width:0;line-height:1">
-    <div style="font-size:0.9rem;font-weight:700;color:#f1f5f9;
-                font-family:monospace;letter-spacing:2px;margin-bottom:3px;">SAGE</div>
-    <div style="font-size:0.65rem;color:#38bdf8;letter-spacing:0.5px;">Signal Assistant</div>
+            background:linear-gradient(135deg,#1a3a6e 0%,#0a2240 60%,#061829 100%);">
+  <img src="{_SAGE_URI}" width="40" height="40"
+       style="border-radius:10px;flex-shrink:0;display:block;"/>
+  <div style="min-width:0;line-height:1.1">
+    <div style="font-size:0.92rem;font-weight:800;color:#f1f5f9;
+                font-family:monospace;letter-spacing:2.5px;">SAGE</div>
+    <div style="font-size:0.64rem;color:#38bdf8;letter-spacing:0.5px;margin-top:2px;">
+      Signal Assistant</div>
   </div>
-</div>
-    """, unsafe_allow_html=True)
+</div>""", unsafe_allow_html=True)
 
     # ── Quick question buttons (only when chat is empty) ──────────────────────
     if not st.session_state.sage_msgs:
         st.caption("Quick questions:")
         for _sg in ["What's the strongest signal?",
                     "Which markets are bearish?",
-                    "Explain the top BUY signal",
+                    "Top BUY signals right now",
                     "High-confidence SELL signals?"]:
             if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
                 st.session_state.sage_pending = _sg
                 st.rerun()
 
-    # ── Messages — pure HTML (no st.chat_message avatars) ────────────────────
+    # ── Messages ──────────────────────────────────────────────────────────────
     _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
     _recent_msgs = st.session_state.sage_msgs[-30:]
+
     for _mi, _msg in enumerate(_recent_msgs):
         _is_user = _msg["role"] == "user"
-        _bg   = "rgba(30,41,59,0.6)"  if _is_user else "rgba(12,24,40,0.5)"
+        _bg   = "rgba(30,41,59,0.7)"  if _is_user else "rgba(10,22,40,0.6)"
         _br   = "12px 12px 3px 12px"  if _is_user else "12px 12px 12px 3px"
-        _ml   = "1.5rem" if _is_user else "0"
-        _mr   = "0"      if _is_user else "1.5rem"
-        _lbl  = "You" if _is_user else "Sage"
+        _ml   = "1.2rem" if _is_user else "0"
+        _mr   = "0"      if _is_user else "1.2rem"
+        _lbl  = "You"    if _is_user else "Sage"
         _lclr = "#64748b" if _is_user else "#38bdf8"
+        _content = _msg["content"].replace("**", "").replace(chr(10), "<br>")
         st.markdown(f"""
-<div style="margin-bottom:0.5rem;margin-left:{_ml};margin-right:{_mr}">
-  <div style="font-size:0.62rem;color:{_lclr};margin-bottom:2px;
-              text-align:{'right' if _is_user else 'left'};
-              font-family:monospace;letter-spacing:0.5px;">{_lbl}</div>
-  <div style="background:{_bg};border-radius:{_br};
-              padding:0.5rem 0.7rem;font-size:0.8rem;line-height:1.55;
-              color:#e2e8f0;border:1px solid rgba(255,255,255,0.06);">
-    {_msg["content"].replace(chr(10), "<br>")}
-  </div>
+<div style="margin-bottom:0.45rem;margin-left:{_ml};margin-right:{_mr}">
+  <div style="font-size:0.61rem;color:{_lclr};margin-bottom:2px;
+              text-align:{'right' if _is_user else 'left'};font-family:monospace;">{_lbl}</div>
+  <div style="background:{_bg};border-radius:{_br};padding:0.45rem 0.65rem;
+              font-size:0.79rem;line-height:1.55;color:#e2e8f0;
+              border:1px solid rgba(255,255,255,0.07);">{_content}</div>
 </div>""", unsafe_allow_html=True)
-        # Open button right after relevant assistant message
-        if not _is_user:
+
+        # Picker buttons — shown inline after disambiguation messages
+        if not _is_user and "picker" in _msg:
+            for _pk in _msg["picker"]:
+                _pm, _pe, _pd, _pc = _SK.get(_pk, (None, None, _pk, _pk))
+                _exname = _pe or _pm or "?"
+                _flag_p = _exname.split(" ")[0]
+                _btn_lbl = f"{_flag_p} {_pd} — {_pc} ({_exname})"
+                if st.button(_btn_lbl, key=f"pick_{_pk}_{_mi}", width='stretch', type="secondary"):
+                    _rep2, _ttup2, _tkey2 = _resolve_and_fetch(_pk)
+                    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
+                    if _ttup2 and _tkey2:
+                        st.session_state.sage_tickers[_tkey2] = _ttup2
+                    st.rerun()
+
+        # Open-in-analysis button after ticker signal messages
+        if not _is_user and "picker" not in _msg:
             _abs_idx = len(st.session_state.sage_msgs) - len(_recent_msgs) + _mi
             if _abs_idx in _ticker_by_msgidx:
                 _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
@@ -2286,12 +2301,13 @@ with st.sidebar:
                     load_top_signals.clear()
                     add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
-    # ── Clear + chat input ────────────────────────────────────────────────────
+    # ── Clear + input ─────────────────────────────────────────────────────────
     if st.session_state.sage_msgs:
         st.divider()
         if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
             st.session_state.sage_msgs    = []
             st.session_state.sage_tickers = {}
+            st.session_state.sage_pick    = None
             st.rerun()
 
     _inp = st.chat_input("Ask about a stock or market…", key="sage_inp")
