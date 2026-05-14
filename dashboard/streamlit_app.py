@@ -2415,36 +2415,6 @@ with st.sidebar:
         st.session_state.sage_pending = _inp
         st.rerun()
 
-    """Given a full _SK key, fetch signal and return (rep, ticker_tuple_or_None)."""
-    _mkt, _exch, _dt, _co = _SK.get(ft_key, (None, None, ft_key, ft_key))
-    _top = load_top_signals(n=20)
-    _sig = _sig_from_df(ft_key, _top)
-    if not _sig and _mkt:
-        with st.spinner(f"Fetching live signal for {_dt}…"):
-            _sig = _live_sig(ft_key, _mkt, _exch)
-    if _sig and _mkt:
-        import pytz as _ptz2
-        _is_up = _sig["predicted"] == 1
-        _s     = _sig["sentiment"]
-        _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
-        try:    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
-        except: _sc = 0
-        _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
-        _flag = (_exch or _mkt or "").split(" ")[0]
-        _src  = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
-        _exlb = f" ({_exch})" if _exch else f" ({_mkt})"
-        _rep  = (f"**{_flag} {_dt}**{_exlb} — {_co}\n\n"
-                 f"{'🟢 **BUY**' if _is_up else '🔴 **SELL**'} · {_sig['confidence']:.0%} confidence\n\n"
-                 f"Sentiment: **{_sl}** ({_s:+.3f}) · ⏱ {_age}{_src}")
-        _next = len(st.session_state.sage_msgs) + 1
-        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
-    elif _mkt:
-        _exlb = f" on {_exch}" if _exch else f" ({_mkt})"
-        _rep  = f"No pre-computed signal for **{_dt}**{_exlb}. Click Open below to run a live analysis."
-        _next = len(st.session_state.sage_msgs) + 1
-        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
-    else:
-        return f"**{ft_key}** isn't in our tracked ticker list.", None, None
 
 if st.session_state.sage_pending:
     _pend = st.session_state.sage_pending
