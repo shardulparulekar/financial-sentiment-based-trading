@@ -2025,6 +2025,9 @@ st.markdown("""
 
 
 
+if "sage_msgs"         not in st.session_state: st.session_state.sage_msgs         = []
+if "sage_pending"      not in st.session_state: st.session_state.sage_pending      = None
+if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
 
