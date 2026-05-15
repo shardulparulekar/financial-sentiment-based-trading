@@ -20,11 +20,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 logging.basicConfig(level=logging.WARNING)
 
+_is_mobile_early = st.query_params.get("mobile", "0") == "1"
 st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed" if _is_mobile_early else "expanded",
 )
 
 st.markdown("""
@@ -1907,7 +1908,7 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-_is_mobile = st.query_params.get("mobile", "0") == "1"
+_is_mobile = _is_mobile_early
 
 # ── Desktop sidebar CSS (only injected on desktop) ────────────────────────────
 if not _is_mobile:
@@ -1967,9 +1968,13 @@ else:
     st.markdown("""
 <style>
 [data-testid="stSidebar"],
+[data-testid="stSidebar"][aria-expanded="true"],
+[data-testid="stSidebar"][aria-expanded="false"],
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"] {
     display: none !important;
+    width: 0 !important;
+    visibility: hidden !important;
 }
 [data-testid="stMain"] { margin-right: 0 !important; overflow-x: hidden !important; }
 </style>
