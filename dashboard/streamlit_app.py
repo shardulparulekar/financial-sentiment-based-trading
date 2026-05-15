@@ -324,8 +324,8 @@ MARKET_CONFIG = {
 EU_EXCHANGES = {
     "🇳🇱 Amsterdam": {
         "suffix": ".AS", "currency": "EUR", "symbol": "€",
-        "tickers": ["ASML","PRX","INGA","HEIA","AGN","ASRNL","RAND"],
-        "names":   ["ASML","Prosus","ING","Heineken","Aegon","ASR Nederland","Randstad"],
+        "tickers": ["ASML","PRX","INGA","HEIA","AGN","ASRNL","RAND","ABN","WKL","ADYEN"],
+        "names":   ["ASML","Prosus","ING","Heineken","Aegon","ASR Nederland","Randstad","ABN Amro","Wolters Kluwer","Adyen"],
         # argenx primary listing moved to Nasdaq — ticker is plain ARGX (no .AS suffix)
         "us_exceptions":      ["ARGX"],
         "us_exception_names": ["Argenx"],
@@ -1885,63 +1885,93 @@ else:
 
 st.markdown("""
 <style>
-/* ── Move sidebar to RIGHT ──────────────────────────────────────────────── */
-[data-testid="stSidebar"] {
+/* ── DESKTOP: sidebar pinned to right (≥ 768px) ─────────────────────────── */
+@media (min-width: 768px) {
+  [data-testid="stSidebar"] {
     left: auto !important; right: 0 !important;
     width: 280px !important; min-width: 280px !important; max-width: 280px !important;
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.18) !important;
     border-right: none !important;
+    position: fixed !important; top: 0 !important; bottom: 0 !important;
+    z-index: 100 !important;
+  }
+  [data-testid="stSidebar"][aria-expanded="false"] {
+    width: 280px !important; min-width: 280px !important;
+    transform: none !important; display: block !important;
+  }
+  [data-testid="stMain"] {
+    margin-right: 280px !important;
+    overflow-x: hidden !important;
+  }
 }
+
+/* ── MOBILE: sidebar as collapsible bottom drawer (< 768px) ─────────────── */
+@media (max-width: 767px) {
+  [data-testid="stSidebar"] {
+    position: fixed !important;
+    left: 0 !important; right: 0 !important; bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important; max-width: 100% !important;
+    height: 52px !important;          /* collapsed: show only header bar */
+    min-height: 52px !important;
+    max-height: 88vh !important;
+    overflow: hidden !important;
+    background: #0a1628 !important;
+    border-top: 2px solid rgba(56,189,248,0.35) !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-radius: 16px 16px 0 0 !important;
+    z-index: 999 !important;
+    transition: height 0.3s ease !important;
+  }
+  [data-testid="stSidebar"]:focus-within,
+  [data-testid="stSidebar"]:has(input:focus),
+  [data-testid="stSidebar"].sage-open {
+    height: 75vh !important;
+    overflow-y: auto !important;
+  }
+  /* Give main content space above mobile drawer */
+  [data-testid="stMain"] {
+    padding-bottom: 70px !important;
+    overflow-x: hidden !important;
+  }
+  /* On mobile, sidebar inner scroll */
+  [data-testid="stSidebar"] > div:first-child {
+    height: 100% !important;
+    overflow-y: auto !important;
+  }
+  /* Mobile: show a drag handle hint above the header */
+  [data-testid="stSidebar"]::before {
+    content: "" !important;
+    display: block !important;
+    width: 40px !important; height: 4px !important;
+    background: rgba(56,189,248,0.4) !important;
+    border-radius: 2px !important;
+    margin: 6px auto 0 !important;
+  }
+}
+
+/* ── Both: sidebar inner padding ─────────────────────────────────────────── */
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
     padding-left: 0.6rem !important; padding-right: 0.6rem !important;
-    overflow-y: auto !important;
 }
-/* ── Hide collapse button + kill "keyboard_double_arrow_left" text leak ── */
-/* Target every possible selector Streamlit 1.57 uses */
+
+/* ── Hide collapse button (all Streamlit versions) ──────────────────────── */
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
 [data-testid="stSidebarCollapseButton"],
 button[data-testid="baseButton-headerNoPadding"],
 section[data-testid="stSidebar"] > div > div > div > button,
 .stSidebar button[kind="header"] {
-    display: none !important;
-    visibility: hidden !important;
+    display: none !important; visibility: hidden !important;
     width: 0 !important; height: 0 !important;
-    overflow: hidden !important;
-    pointer-events: none !important;
-}
-/* Sidebar stays expanded even if aria-expanded flips */
-[data-testid="stSidebar"][aria-expanded="false"] {
-    width: 280px !important; min-width: 280px !important;
-    transform: none !important; display: block !important;
-}
-[data-testid="stMain"] { overflow-x: hidden !important; }
-
-/* ── Chat messages — replace "ace"/"art_" avatar text with clean dots ─── */
-[data-testid="stSidebar"] [data-testid="stChatMessage"] {
-    background: transparent !important;
-    padding: 0.2rem 0 0.1rem !important;
-    gap: 0.4rem !important;
-}
-/* Hide the avatar icon area entirely */
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
-[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
-[data-testid="stSidebar"] [class*="avatarIcon"],
-[data-testid="stSidebar"] [class*="Avatar"] {
-    display: none !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatMessage"] p {
-    font-size: 0.8rem !important; line-height: 1.55 !important;
-}
-/* User messages — right-aligned pill style */
-[data-testid="stSidebar"] [data-testid="stChatMessage"]:has(> div[data-testid="stMarkdown"]) {
-    flex-direction: row-reverse !important;
+    overflow: hidden !important; pointer-events: none !important;
 }
 
-/* ── Chat input ──────────────────────────────────────────────────────────── */
+/* ── Chat input styling ──────────────────────────────────────────────────── */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
@@ -1957,8 +1987,14 @@ section[data-testid="stSidebar"] > div > div > div > button,
 [data-testid="stSidebar"] .stButton > button {
     font-size: 0.75rem !important;
 }
+/* ── Hide avatars ────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
+[data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
+[data-testid="stSidebar"] [class*="avatarIcon"],
+[data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
@@ -1969,7 +2005,9 @@ if "sage_pick"    not in st.session_state: st.session_state.sage_pick    = None
 # keys: "step" (market|exchange|ticker), "market", "exchange"
 if "sage_flow"    not in st.session_state: st.session_state.sage_flow    = None
 
-# ── Ticker lookup ─────────────────────────────────────────────────────────────
+# ── Universal ticker resolution — works for ANY yfinance symbol ───────────────
+# _SK is still built for general-question context (top signals list), but
+# SAGE ticker lookup no longer requires a symbol to be in _SK.
 _SK: dict = {}
 for _m, _cfg in MARKET_CONFIG.items():
     _sfx = _cfg.get("suffix", "")
@@ -1984,46 +2022,38 @@ for _ex, _ecfg in EU_EXCHANGES.items():
         _f = _t if _t in _ecfg.get("us_exceptions", []) else _t + _sfx
         _SK[_f.upper()] = ("🇪🇺 Europe", _ex, _t, _n)
 
+# Suffix map for wizard — market/exchange → yfinance suffix
+_MKT_SUFFIX: dict = {m: cfg.get("suffix","") for m, cfg in MARKET_CONFIG.items()}
+_MKT_SUFFIX["🇪🇺 Europe"] = ""  # exchange-level suffix applied separately
+_EX_SUFFIX: dict  = {ex: cfg.get("suffix","") for ex, cfg in EU_EXCHANGES.items()}
+
+def _build_yf_symbol(ticker: str, market: str, exchange: str | None) -> str:
+    """Build the correct yfinance symbol for any ticker given market/exchange."""
+    t = ticker.upper().strip()
+    if exchange:
+        sfx = _EX_SUFFIX.get(exchange, "")
+    else:
+        sfx = _MKT_SUFFIX.get(market, "")
+    # Don't double-add suffix
+    if sfx and not t.endswith(sfx):
+        return t + sfx
+    return t
+
 def _sk_find(msg: str) -> list:
-    """Find tickers mentioned in a message.
-    Matches: full keys (BMW.DE), bare roots (BMW), display names (ING→INGA.AS).
-    Returns list of full ticker keys that are in _SK."""
+    """Find tickers from _SK mentioned in a message (used for general questions only)."""
     words = [w.strip(".,!?()[]'\"") for w in msg.upper().split()]
     found = []
-
-    # 1. Direct full-key match (e.g. "BMW.DE", "INGA.AS")
     for w in words:
         if w in _SK and w not in found:
             found.append(w)
-
-    # 2. Bare root match — find _SK keys whose root (before the dot) matches
-    #    If multiple exchanges have the same root, collect all (ambiguous)
     if not found:
-        root_map: dict = {}  # root → [full_key, ...]
+        root_map: dict = {}
         for key in _SK:
-            root = key.split(".")[0]
-            root_map.setdefault(root, []).append(key)
+            root_map.setdefault(key.split(".")[0], []).append(key)
         for w in words:
-            if w in root_map and not any(k in found for k in root_map[w]):
+            if w in root_map:
                 for k in root_map[w]:
-                    if k not in found:
-                        found.append(k)
-
-    # 3. Display-name / company-name match (e.g. "ING" → INGA.AS, "SHELL" → SHEL.L)
-    if not found:
-        name_map: dict = {}  # uppercased name word → full_key
-        for key, val in _SK.items():
-            _nm = val[3].upper()  # company name
-            for part in _nm.split():
-                part = part.strip(".,")
-                if len(part) >= 3:
-                    name_map.setdefault(part, []).append(key)
-        for w in words:
-            if len(w) >= 3 and w in name_map:
-                for k in name_map[w]:
-                    if k not in found:
-                        found.append(k)
-
+                    if k not in found: found.append(k)
     return found
 
 def _sig_from_df(ft, df):
@@ -2034,46 +2064,64 @@ def _sig_from_df(ft, df):
     return {"predicted": int(r["predicted"]), "confidence": float(r["confidence"]),
             "sentiment": float(r["sentiment"]), "updated_at": r["updated_at"]}
 
-def _live_sig(ft, mkt, exch):
-    """Try FinBERT pipeline first; fall back to yfinance price momentum signal."""
-    # ── Attempt 1: Full FinBERT pipeline ──────────────────────────────────────
+def _live_sig_universal(yf_symbol: str, market: str, exchange: str | None):
+    """
+    Fetch a FRESH signal for ANY ticker using:
+      1. FinBERT news sentiment pipeline (same as main app)
+      2. yfinance price-momentum fallback if FinBERT unavailable
+    Always runs fresh — no cached table lookup.
+    """
+    # ── Attempt 1: Full FinBERT pipeline (same path as main app) ──────────────
     try:
         from src.data_ingestion      import DataIngestion
         from src.sentiment_model     import SentimentModel
         from src.feature_engineering import FeatureEngineer
-        arts = DataIngestion().fetch_news(ft, market=mkt, exchange=exch)
+        import pytz as _ptz_u
+        # Strip suffix for news fetch (e.g. ABN from ABN.AS)
+        bare = yf_symbol.split(".")[0]
+        arts = DataIngestion().fetch_news(bare, market=market, exchange=exchange)
         sc   = SentimentModel().score_articles(arts) if arts else []
         fe   = FeatureEngineer().build_features(sc)  if sc   else None
         if fe is not None and not fe.empty:
             s = float(fe.iloc[-1].get("mean_score", 0))
-            return {"predicted": 1 if s > 0 else -1, "confidence": min(abs(s)*2+0.5, 0.99),
-                    "sentiment": s, "updated_at": datetime.now(__import__("pytz").utc), "live": True}
+            return {
+                "predicted":  1 if s > 0 else -1,
+                "confidence": min(abs(s) * 2 + 0.5, 0.99),
+                "sentiment":  s,
+                "updated_at": datetime.now(_ptz_u.utc),
+                "live": True, "source": "finbert",
+                "articles": len(arts)
+            }
     except Exception:
         pass
-    # ── Attempt 2: yfinance price-momentum fallback ───────────────────────────
+
+    # ── Attempt 2: yfinance price-momentum fallback ────────────────────────────
     try:
-        import yfinance as _yf, datetime as _dt2
-        # Build full ticker symbol (add market suffix if needed)
-        _sfx = ""
-        if mkt and "🇪🇺" in str(mkt) and exch:
-            _sfx = EU_EXCHANGES.get(exch, {}).get("suffix", "")
-        _sym = ft if ft.endswith(_sfx) else ft + _sfx
-        _hist = _yf.Ticker(_sym).history(period="10d", interval="1d")
+        import yfinance as _yf
+        import datetime as _dt2
+        _hist = _yf.Ticker(yf_symbol).history(period="15d", interval="1d")
         if _hist is None or _hist.empty:
             return None
         _closes = _hist["Close"].dropna()
         if len(_closes) < 3:
             return None
-        # Simple 5-day vs 1-day momentum as sentiment proxy
-        _ret5 = float((_closes.iloc[-1] - _closes.iloc[0]) / _closes.iloc[0])
+        _ret5 = float((_closes.iloc[-1] - _closes.iloc[0])  / _closes.iloc[0])
         _ret1 = float((_closes.iloc[-1] - _closes.iloc[-2]) / _closes.iloc[-2])
-        _s    = (_ret5 * 0.6 + _ret1 * 0.4)   # weighted composite
-        _s    = max(-1.0, min(1.0, _s * 10))   # scale to [-1, 1]
+        _s    = max(-1.0, min(1.0, (_ret5 * 0.6 + _ret1 * 0.4) * 10))
         _conf = min(0.5 + abs(_s) * 0.35, 0.88)
-        _now  = _dt2.datetime.now(_dt2.timezone.utc)
-        return {"predicted": 1 if _s >= 0 else -1, "confidence": _conf,
-                "sentiment": round(_s, 4),
-                "updated_at": _now, "live": True, "source": "price"}
+        # Also grab company info for display name
+        try:
+            _info = _yf.Ticker(yf_symbol).info
+            _name = _info.get("shortName") or _info.get("longName") or yf_symbol
+        except Exception:
+            _name = yf_symbol
+        return {
+            "predicted":  1 if _s >= 0 else -1,
+            "confidence": _conf,
+            "sentiment":  round(_s, 4),
+            "updated_at": _dt2.datetime.now(_dt2.timezone.utc),
+            "live": True, "source": "price", "name": _name
+        }
     except Exception:
         return None
 
@@ -2174,52 +2222,48 @@ def _hf_call(msgs, ctx):
 
 # ── Helper: fetch signal for a resolved full ticker key ───────────────────────
 def _resolve_and_fetch(ft_key):
+    """Resolve a tracked _SK key and fetch fresh signal."""
     _mkt, _exch, _dt, _co = _SK.get(ft_key, (None, None, ft_key, ft_key))
-    _top = load_top_signals(n=20)
-    _sig = _sig_from_df(ft_key, _top)
-    if not _sig and _mkt:
-        with st.spinner(f"Fetching live signal for {_dt}…"):
-            _sig = _live_sig(ft_key, _mkt, _exch)
-    if _sig and _mkt:
-        import pytz as _ptz2
+    _yfsym = _build_yf_symbol(_dt, _mkt or "", _exch)
+    return _fetch_signal_for(_yfsym, _dt, _co, _mkt or "", _exch)
+
+def _fetch_signal_for(yf_symbol: str, display_ticker: str, company: str,
+                      market: str, exchange):
+    """
+    Fetch a FRESH signal for ANY yfinance symbol — no tracked list required.
+    Always runs live analysis (FinBERT → price fallback).
+    """
+    import pytz as _ptz3
+    with st.spinner(f"Running fresh analysis for {display_ticker}…"):
+        _sig = _live_sig_universal(yf_symbol, market, exchange)
+
+    if _sig:
         _is_up = _sig["predicted"] == 1
         _s     = _sig["sentiment"]
         _sl    = "bullish" if _s > 0.05 else ("bearish" if _s < -0.05 else "neutral")
-        try:    _sc = (datetime.now(_ptz2.utc) - _sig["updated_at"]).total_seconds()
+        try:    _sc = (datetime.now(_ptz3.utc) - _sig["updated_at"]).total_seconds()
         except: _sc = 0
-        _age  = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
-        _flag = (_exch or _mkt or "").split(" ")[0]
-        _src  = " · price momentum" if _sig.get("source") == "price" else (" · FinBERT live" if _sig.get("live") else "")
-        _exlb = f" ({_exch})" if _exch else f" ({_mkt})"
-        _rep  = (f"{_flag} {_dt}{_exlb} — {_co}\n\n"
-                 f"{'🟢 BUY' if _is_up else '🔴 SELL'} · {_sig['confidence']:.0%} confidence\n\n"
-                 f"Sentiment: {_sl} ({_s:+.3f}) · ⏱ {_age}{_src}")
-        _next = len(st.session_state.sage_msgs) + 1
-        return _rep, (_mkt, _exch, _dt, _co, _next), ft_key
-    elif _mkt:
-        _exlb = f" on {_exch}" if _exch else f" ({_mkt})"
-        _next = len(st.session_state.sage_msgs) + 1
-        return (f"No pre-computed signal for {_dt}{_exlb}. Click Open below to run a live analysis.",
-                (_mkt, _exch, _dt, _co, _next), ft_key)
+        _age   = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
+        _exlb  = f" ({exchange})" if exchange else f" ({market})" if market else ""
+        _src   = {"finbert": " · FinBERT live", "price": " · price momentum"}.get(
+                  _sig.get("source", ""), "")
+        _arts  = f" · {_sig['articles']} articles" if _sig.get("articles") else ""
+        _name  = _sig.get("name") or company or display_ticker
+        _rep   = (f"{display_ticker}{_exlb} — {_name}\n\n"
+                  f"{'🟢 BUY' if _is_up else '🔴 SELL'} · {_sig['confidence']:.0%} confidence\n\n"
+                  f"Sentiment: {_sl} ({_s:+.3f}){_arts} · ⏱ {_age}{_src}")
+        _next  = len(st.session_state.sage_msgs) + 1
+        return _rep, (market, exchange, display_ticker, _name, _next), yf_symbol
     else:
-        return f"{ft_key} isn't in our tracked ticker list.", None, None
+        _exlb = f" on {exchange}" if exchange else f" ({market})" if market else ""
+        return (f"Couldn't fetch data for {display_ticker}{_exlb}. "
+                f"Check the symbol and try again.", None, None)
 
 # ── Markets and exchanges available ───────────────────────────────────────────
 _ALL_MARKETS   = list(MARKET_CONFIG.keys()) + (["🇪🇺 Europe"] if "🇪🇺 Europe" not in MARKET_CONFIG else [])
 _EU_MKT        = "🇪🇺 Europe"
 _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
-def _tickers_for(market, exchange=None):
-    """Return list of (full_key, display_ticker, name) for a given market/exchange."""
-    results = []
-    for key, val in _SK.items():
-        _m, _e, _dt, _co = val
-        # Europe tickers are stored with market="🇪🇺 Europe" in _SK
-        _m_match = (_m == market) or (market == _EU_MKT and "Europe" in str(_m))
-        if _m_match:
-            if exchange is None or _e == exchange:
-                results.append((key, _dt, _co))
-    return sorted(results, key=lambda x: x[1])
 
 # ── Process pending free-text message ─────────────────────────────────────────
 if st.session_state.sage_pending:
@@ -2256,7 +2300,8 @@ if st.session_state.sage_pending:
             _ctx.append("Sentiment: " + " | ".join(
                 f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
                 for mk, d in _sent.items()))
-        _rep = _hf_call(st.session_state.sage_msgs, "\n".join(_ctx) or "No data.")
+        _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
+                        "\n".join(_ctx) or "No data.")
         st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
@@ -2341,57 +2386,44 @@ with st.sidebar:
                 if st.button(f"{_mflag} {_mname}", key=f"wiz_mkt_{_mkt_opt}_{_mi}",
                              width='stretch', type="secondary"):
                     st.session_state.sage_msgs.append({"role": "user", "content": _mkt_opt})
-                    st.session_state.sage_flow = {**(st.session_state.sage_flow or {}), "market": _mkt_opt}
+                    st.session_state.sage_flow = {**(st.session_state.sage_flow or {}),
+                                                  "market": _mkt_opt}
                     if _mkt_opt == _EU_MKT:
+                        # Europe needs exchange to know suffix (e.g. .AS .DE .L)
                         st.session_state.sage_msgs.append({
                             "role": "assistant",
                             "content": "Which European exchange?",
                             "wizard": "exchange"
                         })
                         st.session_state.sage_flow["step"] = "exchange"
-                        st.rerun()
                     else:
-                        # Non-Europe: resolve ticker directly
-                        _sfx  = MARKET_CONFIG.get(_mkt_opt, {}).get("suffix", "")
-                        _fk   = (_ticker_raw + _sfx).upper()
-                        _hits2 = [_fk] if _fk in _SK else []
-                        if not _hits2:
-                            _hits2 = [h for h in _sk_find(_ticker_raw)
-                                      if _SK.get(h, (None,))[0] == _mkt_opt]
-                        if _hits2:
-                            _rep2, _ttup2, _tkey2 = _resolve_and_fetch(_hits2[0])
-                        else:
-                            _rep2 = f"Couldn't find {_ticker_raw} in {_mkt_opt}. Check the ticker and try again."
-                            _ttup2, _tkey2 = None, None
+                        # Any other market — build yfinance symbol and fetch live
+                        _yfsym2 = _build_yf_symbol(_ticker_raw, _mkt_opt, None)
+                        _rep2, _ttup2, _tkey2 = _fetch_signal_for(
+                            _yfsym2, _ticker_raw, "", _mkt_opt, None)
                         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
                         if _ttup2 and _tkey2:
                             st.session_state.sage_tickers[_tkey2] = _ttup2
                         st.session_state.sage_flow = None
-                        st.rerun()
+                    st.rerun()
 
-        # ── Wizard: exchange buttons ────────────────────────────────────────
+        # ── Wizard: exchange buttons (Europe only) ──────────────────────────
         elif not _is_user and _msg.get("wizard") == "exchange" and _mi == len(_recent) - 1:
             _ticker_raw = (st.session_state.sage_flow or {}).get("ticker", "")
-            _EX_FLAGS = {"Amsterdam":"🇳🇱","Frankfurt":"🇩🇪","London":"🇬🇧",
-                         "Milan":"🇮🇹","Paris":"🇫🇷","Madrid":"🇪🇸","Lisbon":"🇵🇹",
-                         "Brussels":"🇧🇪","Helsinki":"🇫🇮","Stockholm":"🇸🇪"}
+            _mkt_sel    = (st.session_state.sage_flow or {}).get("market", _EU_MKT)
+            _EX_FLAGS   = {"🇳🇱 Amsterdam":"🇳🇱","🇩🇪 Frankfurt":"🇩🇪","🇫🇷 Paris":"🇫🇷",
+                           "🇬🇧 London":"🇬🇧","🇨🇭 Zurich":"🇨🇭","🇮🇹 Milan":"🇮🇹",
+                           "🇪🇸 Madrid":"🇪🇸","🇵🇹 Lisbon":"🇵🇹","🇧🇪 Brussels":"🇧🇪"}
             for _ex_opt in _ALL_EXCHANGES:
                 _eflag = _EX_FLAGS.get(_ex_opt, "🇪🇺")
-                if st.button(f"{_eflag} {_ex_opt}", key=f"wiz_ex_{_ex_opt}_{_mi}",
+                _exname = _ex_opt.split(" ")[-1] if " " in _ex_opt else _ex_opt
+                if st.button(f"{_eflag} {_exname}", key=f"wiz_ex_{_ex_opt}_{_mi}",
                              width='stretch', type="secondary"):
                     st.session_state.sage_msgs.append({"role": "user", "content": _ex_opt})
-                    _sfx2 = EU_EXCHANGES.get(_ex_opt, {}).get("suffix", "")
-                    _fk2  = (_ticker_raw + _sfx2).upper()
-                    if _fk2 in _SK:
-                        _rep2, _ttup2, _tkey2 = _resolve_and_fetch(_fk2)
-                    else:
-                        _fk2b = _ticker_raw.upper()
-                        if _fk2b in _SK and _SK[_fk2b][1] == _ex_opt:
-                            _rep2, _ttup2, _tkey2 = _resolve_and_fetch(_fk2b)
-                        else:
-                            _rep2 = (f"Couldn't find {_ticker_raw} on {_ex_opt} "
-                                     f"(tried {_fk2}). Check spelling and try again.")
-                            _ttup2, _tkey2 = None, None
+                    # Build yfinance symbol: TICKER + exchange suffix (e.g. ABN + .AS)
+                    _yfsym3 = _build_yf_symbol(_ticker_raw, _mkt_sel, _ex_opt)
+                    _rep2, _ttup2, _tkey2 = _fetch_signal_for(
+                        _yfsym3, _ticker_raw, "", _mkt_sel, _ex_opt)
                     st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
                     if _ttup2 and _tkey2:
                         st.session_state.sage_tickers[_tkey2] = _ttup2
