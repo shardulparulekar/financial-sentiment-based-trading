@@ -70,7 +70,7 @@ jobs:
           pip install --upgrade pip
           pip install \
             pandas numpy "yfinance>=0.2.36" feedparser requests pytz \
-            "transformers==4.53.2" "tokenizers==0.21.2" torch sentencepiece tf-keras \
+            "transformers==4.53.2" "tokenizers==0.21.2" torch sentencepiece  \
             scikit-learn scipy supabase python-dotenv
 
       - name: Debug — show structure
