@@ -804,6 +804,55 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ── SAGE toggle: styled CSS that clicks Streamlit's native sidebar button ──────
+st.markdown("""
+<style>
+/* Make Streamlit's sidebar collapsed control visible and styled as SAGE button */
+[data-testid="stSidebarCollapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    position: fixed !important;
+    top: 12px !important;
+    right: 16px !important;
+    z-index: 999 !important;
+    width: auto !important;
+    height: auto !important;
+}
+[data-testid="stSidebarCollapsedControl"] button {
+    background: #1e3a6e !important;
+    border: 1px solid rgba(56,189,248,0.5) !important;
+    border-radius: 8px !important;
+    color: #38bdf8 !important;
+    padding: 6px 14px !important;
+    font-family: monospace !important;
+    font-weight: 700 !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 1.5px !important;
+    cursor: pointer !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 70px !important;
+}
+[data-testid="stSidebarCollapsedControl"] button:hover {
+    background: #2a52a0 !important;
+    border-color: #38bdf8 !important;
+}
+/* Hide the default arrow icon inside the button, show SAGE text instead */
+[data-testid="stSidebarCollapsedControl"] button svg,
+[data-testid="stSidebarCollapsedControl"] button span[data-testid="stIconMaterial"] {
+    display: none !important;
+}
+[data-testid="stSidebarCollapsedControl"] button::after {
+    content: "SAGE ›" !important;
+    display: block !important;
+    font-family: monospace !important;
+    font-weight: 800 !important;
+    letter-spacing: 1px !important;
+    color: #38bdf8 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # Tab pills row
 pill_cols = st.columns([1] + [1] * len(st.session_state.open_tickers) + [4])
