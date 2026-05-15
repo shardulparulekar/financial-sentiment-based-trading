@@ -64,14 +64,22 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install \
             pandas numpy "yfinance>=0.2.36" feedparser requests pytz \
-            "transformers==4.53.2" "tokenizers==0.21.2" torch sentencepiece  \
+            "transformers==4.53.2" "tokenizers==0.21.2" torch sentencepiece \
             scikit-learn scipy supabase python-dotenv
+          # Explicitly remove tensorflow and tf-keras — they cause a segfault
+          # (exit 139) on GitHub Actions runners (no CUDA) when transformers
+          # tries to initialise the TF backend. Remove regardless of how they
+          # got installed (direct, cached, or transitive dependency).
+          pip uninstall -y tensorflow tf-keras keras 2>/dev/null || true
+          echo "TF packages removed. Verifying:"
+          pip show tensorflow 2>/dev/null && echo "WARNING: tensorflow still present" || echo "tensorflow not installed — OK"
 
       - name: Debug — show structure
         run: |
