@@ -25,7 +25,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed" if _is_mobile_early else "expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
@@ -1914,28 +1914,35 @@ _is_mobile = _is_mobile_early
 if not _is_mobile:
     st.markdown("""
 <style>
-/* ── DESKTOP: sidebar pinned to right ──────────────────────────────────── */
-[data-testid="stSidebar"] {
+/* ── DESKTOP: force sidebar visible + pin to right ─────────────────────── */
+/* Override collapsed state — sidebar is ALWAYS shown on desktop */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"][aria-expanded="false"],
+[data-testid="stSidebar"][aria-expanded="true"] {
+    display: block !important;
+    visibility: visible !important;
     left: auto !important; right: 0 !important;
     width: 280px !important; min-width: 280px !important; max-width: 280px !important;
+    height: 100vh !important;
+    position: fixed !important; top: 0 !important; bottom: 0 !important;
+    transform: none !important;
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.18) !important;
     border-right: none !important;
-    position: fixed !important; top: 0 !important; bottom: 0 !important;
     z-index: 100 !important;
+    overflow: hidden !important;
 }
-[data-testid="stSidebar"][aria-expanded="false"] {
-    width: 280px !important; min-width: 280px !important;
-    transform: none !important; display: block !important;
-}
-[data-testid="stMain"] { margin-right: 280px !important; overflow-x: hidden !important; }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
     padding-left: 0.6rem !important; padding-right: 0.6rem !important;
-    overflow-y: auto !important;
+    height: 100% !important; overflow-y: auto !important;
 }
-/* ── Hide collapse button ──────────────────────────────────────────────── */
+/* Main content — leave space for sidebar on right */
+[data-testid="stMain"] {
+    margin-right: 280px !important; overflow-x: hidden !important;
+}
+/* Hide collapse button entirely */
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
 [data-testid="stSidebarCollapseButton"],
@@ -1944,7 +1951,7 @@ section[data-testid="stSidebar"] > div > div > div > button {
     display: none !important; visibility: hidden !important;
     width: 0 !important; height: 0 !important; overflow: hidden !important;
 }
-/* ── Chat input ─────────────────────────────────────────────────────────── */
+/* Chat input */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
