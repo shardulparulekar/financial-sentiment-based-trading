@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 logging.basicConfig(level=logging.WARNING)
 
-_is_mobile_early = st.query_params.get("mobile", "0") == "1"
+
 st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
@@ -1888,70 +1888,42 @@ else:
 # SAGE — Persistent right-side chat assistant
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Mobile detection via JS → query param ─────────────────────────────────────
-# JS runs on load and sets ?mobile=1 if viewport < 768px. Streamlit reads it.
-st.markdown("""
-<script>
-(function() {
-  var w = window.innerWidth || document.documentElement.clientWidth;
-  var params = new URLSearchParams(window.location.search);
-  var cur = params.get('mobile');
-  var want = w < 768 ? '1' : '0';
-  if (cur !== want) {
-    params.set('mobile', want);
-    var newUrl = window.location.pathname + '?' + params.toString() + window.location.hash;
-    window.history.replaceState({}, '', newUrl);
-    // Trigger Streamlit rerun by dispatching a storage event
-    window.dispatchEvent(new Event('popstate'));
-  }
-})();
-</script>
-""", unsafe_allow_html=True)
 
-_is_mobile = _is_mobile_early
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ── Desktop sidebar CSS (only injected on desktop) ────────────────────────────
-if not _is_mobile:
-    st.markdown("""
+st.markdown("""
 <style>
-/* ── DESKTOP: force sidebar visible + pin to right ─────────────────────── */
-/* Override collapsed state — sidebar is ALWAYS shown on desktop */
-[data-testid="stSidebar"],
-[data-testid="stSidebar"][aria-expanded="false"],
-[data-testid="stSidebar"][aria-expanded="true"] {
-    display: block !important;
-    visibility: visible !important;
-    left: auto !important; right: 0 !important;
-    width: 280px !important; min-width: 280px !important; max-width: 280px !important;
-    height: 100vh !important;
-    position: fixed !important; top: 0 !important; bottom: 0 !important;
-    transform: none !important;
+[data-testid="stSidebar"] {
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.18) !important;
     border-right: none !important;
-    z-index: 100 !important;
-    overflow: hidden !important;
 }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
     padding-left: 0.6rem !important; padding-right: 0.6rem !important;
-    height: 100% !important; overflow-y: auto !important;
+    overflow-y: auto !important;
 }
-/* Main content — leave space for sidebar on right */
-[data-testid="stMain"] {
-    margin-right: 280px !important; overflow-x: hidden !important;
-}
-/* Hide collapse button entirely */
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapseButton"],
-button[data-testid="baseButton-headerNoPadding"],
-section[data-testid="stSidebar"] > div > div > div > button {
-    display: none !important; visibility: hidden !important;
-    width: 0 !important; height: 0 !important; overflow: hidden !important;
-}
-/* Chat input */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
@@ -1970,33 +1942,92 @@ section[data-testid="stSidebar"] > div > div > div > button {
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
-else:
-    # On mobile: completely hide the sidebar, show floating FAB instead
-    st.markdown("""
-<style>
-[data-testid="stSidebar"],
-[data-testid="stSidebar"][aria-expanded="true"],
-[data-testid="stSidebar"][aria-expanded="false"],
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
-    display: none !important;
-    width: 0 !important;
-    visibility: hidden !important;
-}
-[data-testid="stMain"] { margin-right: 0 !important; overflow-x: hidden !important; }
-</style>
-""", unsafe_allow_html=True)
 
 
 
 
-# ── Session state ─────────────────────────────────────────────────────────────
-if "sage_msgs"         not in st.session_state: st.session_state.sage_msgs         = []
-if "sage_pending"      not in st.session_state: st.session_state.sage_pending      = None
-if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
-if "sage_dialog_open"  not in st.session_state: st.session_state.sage_dialog_open  = False
+
 
 # ── Universal ticker resolution — works for ANY yfinance symbol ───────────────
 # _SK is still built for general-question context (top signals list), but
@@ -2447,60 +2478,62 @@ def _render_sage_panel():
         st.rerun()
 
 
-# ── Render: desktop sidebar OR mobile dialog ────────────────────────────────────
-if not _is_mobile:
-    # Desktop: persistent right sidebar
-    with st.sidebar:
-        _render_sage_panel()
-else:
-    # Mobile: floating action button + full-screen dialog
-    # Floating button fixed bottom-right — pure HTML, outside Streamlit flow
-    st.markdown("""
-<style>
-#sage-fab-container {
-    position: fixed; bottom: 24px; right: 20px; z-index: 9999;
-}
-#sage-fab-btn {
-    background: #2563eb; color: white; border: none;
-    border-radius: 50px; padding: 12px 20px;
-    font-size: 0.9rem; font-weight: 700; font-family: monospace;
-    letter-spacing: 1px; cursor: pointer;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.5);
-    display: flex; align-items: center; gap: 8px;
-    transition: transform 0.15s, box-shadow 0.15s;
-}
-#sage-fab-btn:hover { transform: scale(1.05); box-shadow: 0 6px 24px rgba(37,99,235,0.7); }
-</style>
-<div id="sage-fab-container">
-  <button id="sage-fab-btn" onclick="window.parent.document.querySelector('[data-testid=\"stButton\"] button[kind=\"primary\"]').click()">
-    <svg width="18" height="18" viewBox="0 0 40 40" fill="none">
-      <rect width="40" height="40" rx="10" fill="white" fill-opacity="0.2"/>
-      <rect x="10" y="10" width="20" height="3" rx="1.5" fill="white"/>
-      <rect x="10" y="18.5" width="20" height="3" rx="1.5" fill="white"/>
-      <rect x="10" y="27" width="20" height="3" rx="1.5" fill="white"/>
-      <rect x="10" y="10" width="3" height="11.5" rx="1.5" fill="white"/>
-      <rect x="27" y="18.5" width="3" height="11.5" rx="1.5" fill="white"/>
-    </svg>
-    SAGE
-  </button>
-</div>
-""", unsafe_allow_html=True)
+# ── Render SAGE in sidebar (collapsed by default) ─────────────────────────────
+with st.sidebar:
+    _render_sage_panel()
 
-    # Real Streamlit button that the FAB click triggers (hidden visually)
-    st.markdown('<div style="position:fixed;bottom:-100px;right:0;opacity:0;pointer-events:none">',
-                unsafe_allow_html=True)
-    _fab_clicked = st.button("Open SAGE", key="sage_fab_real", type="primary")
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    if _fab_clicked:
-        st.session_state.sage_dialog_open = True
 
-    # Render dialog when open
-    if st.session_state.sage_dialog_open:
-        @st.dialog("💬 SAGE — Signal Assistant", width="large")
-        def _sage_dialog():
-            _render_sage_panel()
-            if st.button("✕ Close", key="sage_dialog_close", type="secondary"):
-                st.session_state.sage_dialog_open = False
-                st.rerun()
-        _sage_dialog()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
