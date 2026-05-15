@@ -21,11 +21,14 @@ sys.path.insert(0, str(ROOT))
 logging.basicConfig(level=logging.WARNING)
 
 
+if "sage_open" not in st.session_state:
+    st.session_state.sage_open = False
+
 st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded" if st.session_state.sage_open else "collapsed",
 )
 
 st.markdown("""
@@ -789,9 +792,12 @@ _days_nav  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 _mons_nav  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 _clock_str = (f"{_days_nav[_now_utc.weekday()]} {_now_utc.day} "
               f"{_mons_nav[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC")
-st.markdown(f"""
+
+_nav_left, _nav_right = st.columns([9, 1])
+with _nav_left:
+    st.markdown(f"""
 <div style="display:flex;align-items:center;justify-content:space-between;
-            padding:0.6rem 0.25rem;border-bottom:1px solid #1a2035;
+            padding:0.55rem 0.25rem;border-bottom:1px solid #1a2035;
             font-family:'Inter',system-ui,sans-serif;margin-bottom:0.5rem;">
   <span>
     <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:600;
@@ -804,54 +810,30 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── SAGE toggle: styled CSS that clicks Streamlit's native sidebar button ──────
-st.markdown("""
-<style>
-/* Make Streamlit's sidebar collapsed control visible and styled as SAGE button */
-[data-testid="stSidebarCollapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    position: fixed !important;
-    top: 12px !important;
-    right: 16px !important;
-    z-index: 999 !important;
-    width: auto !important;
-    height: auto !important;
-}
-[data-testid="stSidebarCollapsedControl"] button {
+with _nav_right:
+    st.markdown("""<style>
+/* SAGE button in nav — always visible top-right */
+div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
     background: #1e3a6e !important;
     border: 1px solid rgba(56,189,248,0.5) !important;
-    border-radius: 8px !important;
     color: #38bdf8 !important;
-    padding: 6px 14px !important;
     font-family: monospace !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     font-size: 0.78rem !important;
     letter-spacing: 1.5px !important;
-    cursor: pointer !important;
-    width: auto !important;
-    height: auto !important;
-    min-width: 70px !important;
+    border-radius: 8px !important;
+    padding: 0.3rem 0.7rem !important;
+    margin-top: 0.2rem !important;
 }
-[data-testid="stSidebarCollapsedControl"] button:hover {
+div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
     background: #2a52a0 !important;
     border-color: #38bdf8 !important;
 }
-/* Hide the default arrow icon inside the button, show SAGE text instead */
-[data-testid="stSidebarCollapsedControl"] button svg,
-[data-testid="stSidebarCollapsedControl"] button span[data-testid="stIconMaterial"] {
-    display: none !important;
-}
-[data-testid="stSidebarCollapsedControl"] button::after {
-    content: "SAGE ›" !important;
-    display: block !important;
-    font-family: monospace !important;
-    font-weight: 800 !important;
-    letter-spacing: 1px !important;
-    color: #38bdf8 !important;
-}
-</style>
-""", unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
+    _sage_label = "✕ SAGE" if st.session_state.sage_open else "SAGE ›"
+    if st.button(_sage_label, key="sage_toggle_btn", help="Toggle SAGE Signal Assistant"):
+        st.session_state.sage_open = not st.session_state.sage_open
+        st.rerun()
 
 
 # Tab pills row
@@ -2079,6 +2061,7 @@ if "sage_pending"      not in st.session_state: st.session_state.sage_pending   
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
+# sage_open already initialised before set_page_config above
 
 
 # ── Universal ticker resolution — works for ANY yfinance symbol ───────────────
