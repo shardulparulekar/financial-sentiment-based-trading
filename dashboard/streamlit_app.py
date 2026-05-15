@@ -1883,11 +1883,38 @@ else:
 # SAGE — Persistent right-side chat assistant
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SAGE — Persistent right-side chat assistant
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Mobile detection via JS → query param ─────────────────────────────────────
+# JS runs on load and sets ?mobile=1 if viewport < 768px. Streamlit reads it.
 st.markdown("""
+<script>
+(function() {
+  var w = window.innerWidth || document.documentElement.clientWidth;
+  var params = new URLSearchParams(window.location.search);
+  var cur = params.get('mobile');
+  var want = w < 768 ? '1' : '0';
+  if (cur !== want) {
+    params.set('mobile', want);
+    var newUrl = window.location.pathname + '?' + params.toString() + window.location.hash;
+    window.history.replaceState({}, '', newUrl);
+    // Trigger Streamlit rerun by dispatching a storage event
+    window.dispatchEvent(new Event('popstate'));
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+_is_mobile = st.query_params.get("mobile", "0") == "1"
+
+# ── Desktop sidebar CSS (only injected on desktop) ────────────────────────────
+if not _is_mobile:
+    st.markdown("""
 <style>
-/* ── DESKTOP: sidebar pinned to right (≥ 768px) ─────────────────────────── */
-@media (min-width: 768px) {
-  [data-testid="stSidebar"] {
+/* ── DESKTOP: sidebar pinned to right ──────────────────────────────────── */
+[data-testid="stSidebar"] {
     left: auto !important; right: 0 !important;
     width: 280px !important; min-width: 280px !important; max-width: 280px !important;
     background: #080f1e !important;
@@ -1895,83 +1922,28 @@ st.markdown("""
     border-right: none !important;
     position: fixed !important; top: 0 !important; bottom: 0 !important;
     z-index: 100 !important;
-  }
-  [data-testid="stSidebar"][aria-expanded="false"] {
+}
+[data-testid="stSidebar"][aria-expanded="false"] {
     width: 280px !important; min-width: 280px !important;
     transform: none !important; display: block !important;
-  }
-  [data-testid="stMain"] {
-    margin-right: 280px !important;
-    overflow-x: hidden !important;
-  }
 }
-
-/* ── MOBILE: sidebar as collapsible bottom drawer (< 768px) ─────────────── */
-@media (max-width: 767px) {
-  [data-testid="stSidebar"] {
-    position: fixed !important;
-    left: 0 !important; right: 0 !important; bottom: 0 !important;
-    top: auto !important;
-    width: 100% !important; max-width: 100% !important;
-    height: 52px !important;          /* collapsed: show only header bar */
-    min-height: 52px !important;
-    max-height: 88vh !important;
-    overflow: hidden !important;
-    background: #0a1628 !important;
-    border-top: 2px solid rgba(56,189,248,0.35) !important;
-    border-left: none !important;
-    border-right: none !important;
-    border-radius: 16px 16px 0 0 !important;
-    z-index: 999 !important;
-    transition: height 0.3s ease !important;
-  }
-  [data-testid="stSidebar"]:focus-within,
-  [data-testid="stSidebar"]:has(input:focus),
-  [data-testid="stSidebar"].sage-open {
-    height: 75vh !important;
-    overflow-y: auto !important;
-  }
-  /* Give main content space above mobile drawer */
-  [data-testid="stMain"] {
-    padding-bottom: 70px !important;
-    overflow-x: hidden !important;
-  }
-  /* On mobile, sidebar inner scroll */
-  [data-testid="stSidebar"] > div:first-child {
-    height: 100% !important;
-    overflow-y: auto !important;
-  }
-  /* Mobile: show a drag handle hint above the header */
-  [data-testid="stSidebar"]::before {
-    content: "" !important;
-    display: block !important;
-    width: 40px !important; height: 4px !important;
-    background: rgba(56,189,248,0.4) !important;
-    border-radius: 2px !important;
-    margin: 6px auto 0 !important;
-  }
-}
-
-/* ── Both: sidebar inner padding ─────────────────────────────────────────── */
+[data-testid="stMain"] { margin-right: 280px !important; overflow-x: hidden !important; }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
     padding-left: 0.6rem !important; padding-right: 0.6rem !important;
+    overflow-y: auto !important;
 }
-
-/* ── Hide collapse button (all Streamlit versions) ──────────────────────── */
+/* ── Hide collapse button ──────────────────────────────────────────────── */
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
 [data-testid="stSidebarCollapseButton"],
 button[data-testid="baseButton-headerNoPadding"],
-section[data-testid="stSidebar"] > div > div > div > button,
-.stSidebar button[kind="header"] {
+section[data-testid="stSidebar"] > div > div > div > button {
     display: none !important; visibility: hidden !important;
-    width: 0 !important; height: 0 !important;
-    overflow: hidden !important; pointer-events: none !important;
+    width: 0 !important; height: 0 !important; overflow: hidden !important;
 }
-
-/* ── Chat input styling ──────────────────────────────────────────────────── */
+/* ── Chat input ─────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
@@ -1983,27 +1955,36 @@ section[data-testid="stSidebar"] > div > div > div > button,
     border: 1px solid rgba(56,189,248,0.3) !important;
     color: #38bdf8 !important;
 }
-/* ── Sidebar buttons ─────────────────────────────────────────────────────── */
-[data-testid="stSidebar"] .stButton > button {
-    font-size: 0.75rem !important;
-}
-/* ── Hide avatars ────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] .stButton > button { font-size: 0.75rem !important; }
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+else:
+    # On mobile: completely hide the sidebar, show floating FAB instead
+    st.markdown("""
+<style>
+[data-testid="stSidebar"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+    display: none !important;
+}
+[data-testid="stMain"] { margin-right: 0 !important; overflow-x: hidden !important; }
+</style>
+""", unsafe_allow_html=True)
+
+
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
-if "sage_msgs"    not in st.session_state: st.session_state.sage_msgs    = []
-if "sage_pending" not in st.session_state: st.session_state.sage_pending = None
-if "sage_tickers" not in st.session_state: st.session_state.sage_tickers = {}
-if "sage_pick"    not in st.session_state: st.session_state.sage_pick    = None
-# sage_flow: drives the guided market→exchange→ticker wizard
-# keys: "step" (market|exchange|ticker), "market", "exchange"
-if "sage_flow"    not in st.session_state: st.session_state.sage_flow    = None
+if "sage_msgs"         not in st.session_state: st.session_state.sage_msgs         = []
+if "sage_pending"      not in st.session_state: st.session_state.sage_pending      = None
+if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
+if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
+if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
+if "sage_dialog_open"  not in st.session_state: st.session_state.sage_dialog_open  = False
 
 # ── Universal ticker resolution — works for ANY yfinance symbol ───────────────
 # _SK is still built for general-question context (top signals list), but
@@ -2316,7 +2297,8 @@ if st.session_state.sage_pending:
         st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
 
 
-# ── Icon — simple flat blue square with signal waveform bars ──────────────────
+
+# ── SAGE icon ──────────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTAiIGZpbGw9IiMyNTYzZWIiLz4KICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxOC41IiB3aWR0aD0iMjAiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMjciIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIyNyIgeT0iMTguNSIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
 
 # Migrate old 4-tuple ticker entries
@@ -2325,9 +2307,9 @@ for _k in list(st.session_state.sage_tickers.keys()):
     if len(_v) == 4:
         st.session_state.sage_tickers[_k] = (_v[0], _v[1], _v[2], _v[3], -1)
 
-# ── Render sidebar ─────────────────────────────────────────────────────────────
-with st.sidebar:
-
+# ── Shared SAGE UI — called from sidebar (desktop) or dialog (mobile) ──────────
+def _render_sage_panel():
+    """Render the full SAGE chat UI. Works inside st.sidebar or st.dialog."""
     # Header
     st.markdown(f"""
 <div style="display:flex;align-items:center;gap:0.65rem;
@@ -2355,7 +2337,7 @@ with st.sidebar:
                 st.rerun()
         st.caption("Or type any ticker below ↓")
 
-    # Render messages + wizard buttons inline
+    # Messages + wizard buttons
     _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
     _recent = st.session_state.sage_msgs[-40:]
 
@@ -2377,7 +2359,7 @@ with st.sidebar:
               border:1px solid rgba(255,255,255,0.07);">{_content}</div>
 </div>""", unsafe_allow_html=True)
 
-        # ── Wizard: market buttons ──────────────────────────────────────────
+        # Wizard: market buttons
         if not _is_user and _msg.get("wizard") == "market" and _mi == len(_recent) - 1:
             _ticker_raw = (st.session_state.sage_flow or {}).get("ticker", "")
             for _mkt_opt in _ALL_MARKETS:
@@ -2389,7 +2371,6 @@ with st.sidebar:
                     st.session_state.sage_flow = {**(st.session_state.sage_flow or {}),
                                                   "market": _mkt_opt}
                     if _mkt_opt == _EU_MKT:
-                        # Europe needs exchange to know suffix (e.g. .AS .DE .L)
                         st.session_state.sage_msgs.append({
                             "role": "assistant",
                             "content": "Which European exchange?",
@@ -2397,7 +2378,6 @@ with st.sidebar:
                         })
                         st.session_state.sage_flow["step"] = "exchange"
                     else:
-                        # Any other market — build yfinance symbol and fetch live
                         _yfsym2 = _build_yf_symbol(_ticker_raw, _mkt_opt, None)
                         _rep2, _ttup2, _tkey2 = _fetch_signal_for(
                             _yfsym2, _ticker_raw, "", _mkt_opt, None)
@@ -2407,7 +2387,7 @@ with st.sidebar:
                         st.session_state.sage_flow = None
                     st.rerun()
 
-        # ── Wizard: exchange buttons (Europe only) ──────────────────────────
+        # Wizard: exchange buttons (Europe only)
         elif not _is_user and _msg.get("wizard") == "exchange" and _mi == len(_recent) - 1:
             _ticker_raw = (st.session_state.sage_flow or {}).get("ticker", "")
             _mkt_sel    = (st.session_state.sage_flow or {}).get("market", _EU_MKT)
@@ -2415,12 +2395,11 @@ with st.sidebar:
                            "🇬🇧 London":"🇬🇧","🇨🇭 Zurich":"🇨🇭","🇮🇹 Milan":"🇮🇹",
                            "🇪🇸 Madrid":"🇪🇸","🇵🇹 Lisbon":"🇵🇹","🇧🇪 Brussels":"🇧🇪"}
             for _ex_opt in _ALL_EXCHANGES:
-                _eflag = _EX_FLAGS.get(_ex_opt, "🇪🇺")
+                _eflag  = _EX_FLAGS.get(_ex_opt, "🇪🇺")
                 _exname = _ex_opt.split(" ")[-1] if " " in _ex_opt else _ex_opt
                 if st.button(f"{_eflag} {_exname}", key=f"wiz_ex_{_ex_opt}_{_mi}",
                              width='stretch', type="secondary"):
                     st.session_state.sage_msgs.append({"role": "user", "content": _ex_opt})
-                    # Build yfinance symbol: TICKER + exchange suffix (e.g. ABN + .AS)
                     _yfsym3 = _build_yf_symbol(_ticker_raw, _mkt_sel, _ex_opt)
                     _rep2, _ttup2, _tkey2 = _fetch_signal_for(
                         _yfsym3, _ticker_raw, "", _mkt_sel, _ex_opt)
@@ -2430,7 +2409,7 @@ with st.sidebar:
                     st.session_state.sage_flow = None
                     st.rerun()
 
-        # ── Open-in-analysis button after signal replies ────────────────────
+        # Open-in-analysis button after signal replies
         if not _is_user and "wizard" not in _msg:
             _abs_idx = len(st.session_state.sage_msgs) - len(_recent) + _mi
             if _abs_idx in _ticker_by_msgidx:
@@ -2454,3 +2433,62 @@ with st.sidebar:
     if _inp:
         st.session_state.sage_pending = _inp
         st.rerun()
+
+
+# ── Render: desktop sidebar OR mobile dialog ────────────────────────────────────
+if not _is_mobile:
+    # Desktop: persistent right sidebar
+    with st.sidebar:
+        _render_sage_panel()
+else:
+    # Mobile: floating action button + full-screen dialog
+    # Floating button fixed bottom-right — pure HTML, outside Streamlit flow
+    st.markdown("""
+<style>
+#sage-fab-container {
+    position: fixed; bottom: 24px; right: 20px; z-index: 9999;
+}
+#sage-fab-btn {
+    background: #2563eb; color: white; border: none;
+    border-radius: 50px; padding: 12px 20px;
+    font-size: 0.9rem; font-weight: 700; font-family: monospace;
+    letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(37,99,235,0.5);
+    display: flex; align-items: center; gap: 8px;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+#sage-fab-btn:hover { transform: scale(1.05); box-shadow: 0 6px 24px rgba(37,99,235,0.7); }
+</style>
+<div id="sage-fab-container">
+  <button id="sage-fab-btn" onclick="window.parent.document.querySelector('[data-testid=\"stButton\"] button[kind=\"primary\"]').click()">
+    <svg width="18" height="18" viewBox="0 0 40 40" fill="none">
+      <rect width="40" height="40" rx="10" fill="white" fill-opacity="0.2"/>
+      <rect x="10" y="10" width="20" height="3" rx="1.5" fill="white"/>
+      <rect x="10" y="18.5" width="20" height="3" rx="1.5" fill="white"/>
+      <rect x="10" y="27" width="20" height="3" rx="1.5" fill="white"/>
+      <rect x="10" y="10" width="3" height="11.5" rx="1.5" fill="white"/>
+      <rect x="27" y="18.5" width="3" height="11.5" rx="1.5" fill="white"/>
+    </svg>
+    SAGE
+  </button>
+</div>
+""", unsafe_allow_html=True)
+
+    # Real Streamlit button that the FAB click triggers (hidden visually)
+    st.markdown('<div style="position:fixed;bottom:-100px;right:0;opacity:0;pointer-events:none">',
+                unsafe_allow_html=True)
+    _fab_clicked = st.button("Open SAGE", key="sage_fab_real", type="primary")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if _fab_clicked:
+        st.session_state.sage_dialog_open = True
+
+    # Render dialog when open
+    if st.session_state.sage_dialog_open:
+        @st.dialog("💬 SAGE — Signal Assistant", width="large")
+        def _sage_dialog():
+            _render_sage_panel()
+            if st.button("✕ Close", key="sage_dialog_close", type="secondary"):
+                st.session_state.sage_dialog_open = False
+                st.rerun()
+        _sage_dialog()
