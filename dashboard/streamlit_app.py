@@ -1927,32 +1927,42 @@ else:
 # ── Sidebar CSS: right-side panel, hides native controls ──────────────────────
 st.markdown("""
 <style>
-/* ── Force sidebar to RIGHT side ────────────────────────────────────────── */
+/* ── Sidebar: fixed position on RIGHT, slides in/out from right edge ────── */
 [data-testid="stSidebar"] {
+    position: fixed !important;
+    top: 0 !important;
     left: auto !important;
     right: 0 !important;
-    transform: none !important;
+    bottom: 0 !important;
+    width: 18rem !important;
+    min-width: 18rem !important;
+    max-width: 18rem !important;
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.25) !important;
     border-right: none !important;
+    transition: transform 0.3s ease !important;
+    z-index: 999 !important;
+    overflow: hidden !important;
 }
-/* When collapsed, push it off the RIGHT edge instead of left */
+/* Collapsed: hide off the RIGHT edge (not left) */
 [data-testid="stSidebar"][aria-expanded="false"] {
-    transform: translateX(100%) !important;
+    transform: translateX(110%) !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
+/* Open: slide in from right */
 [data-testid="stSidebar"][aria-expanded="true"] {
     transform: translateX(0%) !important;
+    visibility: visible !important;
+    pointer-events: all !important;
 }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
     padding-left: 0.6rem !important;
     padding-right: 0.6rem !important;
+    height: 100% !important;
     overflow-y: auto !important;
-}
-/* ── Shift main content left when sidebar open ───────────────────────────── */
-[data-testid="stMain"] {
-    transition: margin-right 0.3s ease !important;
 }
 /* ── Hide ALL native Streamlit sidebar toggle controls ──────────────────── */
 [data-testid="stSidebarCollapsedControl"],
