@@ -567,14 +567,15 @@ def add_ticker_tab(full_ticker, display_ticker, company, market, exchange):
 
 
 def close_ticker_tab(full_ticker):
+    _sage_was_open = st.session_state.get("sage_open", False)
     st.session_state.open_tickers = [
         t for t in st.session_state.open_tickers if t["full"] != full_ticker
     ]
     if st.session_state.active_tab == full_ticker:
         st.session_state.active_tab = "home"
-        # Clear signal cache so home page shows fresh updated_at timestamps
-        # after the user has run an analysis and closed the tab.
         load_top_signals.clear()
+    # Preserve SAGE state explicitly — prevents flicker on rerun
+    st.session_state.sage_open = _sage_was_open
     st.rerun()
 
 
@@ -813,7 +814,7 @@ with _nav_left:
 
 # ── Floating SAGE FAB ─────────────────────────────────────────────────────────
 _sage_right  = "310px" if st.session_state.sage_open else "24px"
-_sage_icon   = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA1NiI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzFlNDBhZiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMwZTc0OTAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxyZWN0IHdpZHRoPSI1NiIgaGVpZ2h0PSI1NiIgcng9IjE0IiBmaWxsPSJ1cmwoJTIzYmcpIi8+CiAgPHBvbHlsaW5lIHBvaW50cz0iNCwyOCAxMCwyOCAxNCwxNCAxOCw0MiAyMiwxOCAyNiwzNiAzMCwxMCAzNCw0NCA0MiwyOCA1MiwyOCIKICAgIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMi41IgogICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPg=="
+_sage_icon   = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSdiZycgeDE9JzAlJyB5MT0nMCUnIHgyPScxMDAlJyB5Mj0nMTAwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nIzFlNDBhZicvPjxzdG9wIG9mZnNldD0nNTAlJyBzdG9wLWNvbG9yPScjMGU3NDkwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPScjMGY0Yzc1Jy8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScyJyByZXN1bHQ9J2JsdXInLz48ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE2JyBmaWxsPSd1cmwoJTIzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTYnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzNjdlOGY5JyBzdHJva2Utd2lkdGg9JzEuMicgb3BhY2l0eT0nMC4zNScvPjxwb2x5bGluZSBwb2ludHM9JzQsMzggMTAsMzggMTMsMjUgMTcsNTEgMjEsMjcgMjUsNDQgMjksMjIgMzMsNDggMzcsMzAgNDEsNDMgNDUsMzggNTIsMzggNTYsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzZTBmN2ZmJyBzdHJva2Utd2lkdGg9JzIuNCcgc3Ryb2tlLWxpbmVjYXA9J3JvdW5kJyBzdHJva2UtbGluZWpvaW49J3JvdW5kJyBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPjxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzQuNScgZmlsbD0nJTIzMDBlNWZmJyBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPjxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzIuNScgZmlsbD0nd2hpdGUnIG9wYWNpdHk9JzAuOTUnLz48dGV4dCB4PSczNicgeT0nNjMnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOC41JyBmb250LXdlaWdodD0nODAwJyBsZXR0ZXItc3BhY2luZz0nMy41JyBmaWxsPSclMjNlMGY3ZmYnIG9wYWNpdHk9JzAuOTInPlNBR0U8L3RleHQ+PC9zdmc+"
 
 st.markdown(f"""
 <style>
@@ -834,10 +835,10 @@ st.markdown(f"""
     border: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    border-radius: 14px !important;
+    width: 72px !important;
+    height: 72px !important;
+    min-width: 72px !important;
+    border-radius: 18px !important;
     box-shadow: 0 4px 20px rgba(37,99,235,0.6), 0 0 0 2px rgba(56,189,248,0.3) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
     overflow: hidden !important;
