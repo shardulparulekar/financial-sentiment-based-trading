@@ -813,51 +813,92 @@ with _nav_left:
 
 
 # ── Floating SAGE FAB ─────────────────────────────────────────────────────────
-_sage_right  = "310px" if st.session_state.sage_open else "24px"
-_sage_icon   = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA3MiA3Mic+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSdiZycgeDE9JzAlJyB5MT0nMCUnIHgyPScxMDAlJyB5Mj0nMTAwJSc+PHN0b3Agb2Zmc2V0PScwJScgc3RvcC1jb2xvcj0nIzFlNDBhZicvPjxzdG9wIG9mZnNldD0nNTAlJyBzdG9wLWNvbG9yPScjMGU3NDkwJy8+PHN0b3Agb2Zmc2V0PScxMDAlJyBzdG9wLWNvbG9yPScjMGY0Yzc1Jy8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSdnbG93JyB4PSctNDAlJyB5PSctNDAlJyB3aWR0aD0nMTgwJScgaGVpZ2h0PScxODAlJz48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPScyJyByZXN1bHQ9J2JsdXInLz48ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49J2JsdXInLz48ZmVNZXJnZU5vZGUgaW49J1NvdXJjZUdyYXBoaWMnLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxyZWN0IHdpZHRoPSc3MicgaGVpZ2h0PSc3Micgcng9JzE2JyBmaWxsPSd1cmwoJTIzYmcpJy8+PHJlY3Qgd2lkdGg9JzcyJyBoZWlnaHQ9JzcyJyByeD0nMTYnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzNjdlOGY5JyBzdHJva2Utd2lkdGg9JzEuMicgb3BhY2l0eT0nMC4zNScvPjxwb2x5bGluZSBwb2ludHM9JzQsMzggMTAsMzggMTMsMjUgMTcsNTEgMjEsMjcgMjUsNDQgMjksMjIgMzMsNDggMzcsMzAgNDEsNDMgNDUsMzggNTIsMzggNTYsMzgnIGZpbGw9J25vbmUnIHN0cm9rZT0nJTIzZTBmN2ZmJyBzdHJva2Utd2lkdGg9JzIuNCcgc3Ryb2tlLWxpbmVjYXA9J3JvdW5kJyBzdHJva2UtbGluZWpvaW49J3JvdW5kJyBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPjxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzQuNScgZmlsbD0nJTIzMDBlNWZmJyBmaWx0ZXI9J3VybCglMjNnbG93KScgb3BhY2l0eT0nMScvPjxjaXJjbGUgY3g9JzUyJyBjeT0nMzgnIHI9JzIuNScgZmlsbD0nd2hpdGUnIG9wYWNpdHk9JzAuOTUnLz48dGV4dCB4PSczNicgeT0nNjMnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdtb25vc3BhY2UnIGZvbnQtc2l6ZT0nOC41JyBmb250LXdlaWdodD0nODAwJyBsZXR0ZXItc3BhY2luZz0nMy41JyBmaWxsPSclMjNlMGY3ZmYnIG9wYWNpdHk9JzAuOTInPlNBR0U8L3RleHQ+PC9zdmc+"
+_sage_right = "310px" if st.session_state.sage_open else "24px"
 
 st.markdown(f"""
 <style>
-/* ── FAB container (next stElementContainer after anchor) ───────────────── */
+/* ── FAB container position ─────────────────────────────────────────────── */
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] {{
     position: fixed !important;
     bottom: 72px !important;
     right: {_sage_right} !important;
     z-index: 9998 !important;
-    width: auto !important;
-    transition: right 0.3s ease !important;
-}}
-/* ── FAB button style: round image button ───────────────────────────────── */
-[data-testid="stElementContainer"]:has(#sage-fab-anchor)
-  + [data-testid="stElementContainer"] button {{
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
     width: 72px !important;
     height: 72px !important;
+    transition: right 0.3s ease !important;
+}}
+/* ── Button base: transparent, sized to icon ────────────────────────────── */
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button {{
+    background: linear-gradient(135deg, #1e40af, #0e7490, #0f4c75) !important;
+    border: 1.5px solid rgba(103,232,249,0.4) !important;
+    padding: 0 !important; margin: 0 !important;
+    width: 72px !important; height: 72px !important;
     min-width: 72px !important;
-    border-radius: 18px !important;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.6), 0 0 0 2px rgba(56,189,248,0.3) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 20px rgba(37,99,235,0.55),
+                0 0 0 1.5px rgba(56,189,248,0.2) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
-    overflow: hidden !important;
-    background-image: url("{_sage_icon}") !important;
-    background-size: cover !important;
-    background-repeat: no-repeat !important;
-    color: transparent !important;
-    font-size: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    position: relative !important;
+    overflow: visible !important;
 }}
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] button:hover {{
-    transform: scale(1.1) !important;
-    box-shadow: 0 6px 28px rgba(37,99,235,0.75), 0 0 0 3px rgba(56,189,248,0.5) !important;
+    transform: scale(1.08) !important;
+    box-shadow: 0 6px 28px rgba(37,99,235,0.7),
+                0 0 0 2px rgba(56,189,248,0.45) !important;
 }}
+/* ── Hide Streamlit's default button label ──────────────────────────────── */
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] button p {{
     display: none !important;
 }}
-/* ── Desktop (≥1024px): push content left when SAGE open ───────────────── */
+/* ── Waveform drawn via CSS — 5 bars of different heights ───────────────── */
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button::before {{
+    content: "" !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    width: 44px !important;
+    height: 24px !important;
+    background-image:
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%),
+      linear-gradient(to top, #e0f7ff 100%, transparent 0%) !important;
+    background-size:
+      4px 8px, 4px 18px, 4px 12px, 4px 22px, 4px 14px, 4px 20px, 4px 10px !important;
+    background-position:
+      0 center, 7px center, 14px center, 21px center, 28px center, 35px center, 42px center !important;
+    background-repeat: no-repeat !important;
+    opacity: 0.92 !important;
+    margin-bottom: 4px !important;
+}}
+/* ── SAGE label below waveform ──────────────────────────────────────────── */
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button::after {{
+    content: "SAGE" !important;
+    display: block !important;
+    font-family: monospace !important;
+    font-size: 8px !important;
+    font-weight: 800 !important;
+    letter-spacing: 3px !important;
+    color: rgba(224,247,255,0.92) !important;
+    text-align: center !important;
+    line-height: 1 !important;
+}}
+/* ── Desktop (≥1024px): push content when SAGE open ────────────────────── */
 @media (min-width: 1024px) {{
     [data-testid="stMainBlockContainer"] {{
         padding-right: {'300px' if st.session_state.sage_open else '1rem'} !important;
