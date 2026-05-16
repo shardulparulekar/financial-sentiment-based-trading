@@ -28,7 +28,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded" if st.session_state.sage_open else "collapsed",
 )
 
 st.markdown("""
@@ -811,44 +811,12 @@ with _nav_left:
 """, unsafe_allow_html=True)
 
 with _nav_right:
-    # Pure HTML button fixed top-right — clicks Streamlit's own sidebar toggle via JS
-    # This is the only approach that reliably works across reruns
-    st.markdown(f"""
-<style>
-#sage-open-btn {{
-    position: fixed;
-    top: 14px; right: 16px;
-    z-index: 9999;
-    background: #1e3a6e;
-    border: 1px solid rgba(56,189,248,0.5);
-    color: #38bdf8;
-    font-family: monospace;
-    font-weight: 800;
-    font-size: 0.78rem;
-    letter-spacing: 1.5px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    display: {'none' if st.session_state.sage_open else 'block'};
-}}
-#sage-open-btn:hover {{ background: #2a52a0; border-color: #38bdf8; }}
-</style>
-<button id="sage-open-btn" onclick="
-  (function(){{
-    var frame = window.parent.document;
-    var btn = frame.querySelector('[data-testid=\\"stSidebarCollapsedControl\\"] button')
-           || frame.querySelector('button[aria-expanded=\\"false\\"][class*=\\"sidebar\\"]')
-           || frame.querySelector('[data-testid=\\"stSidebarCollapseButton\\"]');
-    if(btn){{ btn.click(); }}
-    else {{
-      // Fallback: find sidebar and force it visible
-      var sb = frame.querySelector('[data-testid=\\"stSidebar\\"]');
-      if(sb){{ sb.style.transform='none'; sb.style.display='block'; }}
-    }}
-  }})();
-  document.getElementById('sage-open-btn').style.display='none';
-">SAGE ›</button>
-""", unsafe_allow_html=True)
+    # Real Streamlit button — always works, no JS needed
+    if not st.session_state.sage_open:
+        if st.button("SAGE ›", key="sage_open_btn",
+                     help="Open SAGE Signal Assistant", type="secondary"):
+            st.session_state.sage_open = True
+            st.rerun()
 
 
 # Tab pills row
@@ -1959,13 +1927,21 @@ else:
 # ── Sidebar CSS: right-side panel, hides native controls ──────────────────────
 st.markdown("""
 <style>
-/* ── Move sidebar to RIGHT side ─────────────────────────────────────────── */
+/* ── Force sidebar to RIGHT side ────────────────────────────────────────── */
 [data-testid="stSidebar"] {
     left: auto !important;
     right: 0 !important;
+    transform: none !important;
+    background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.25) !important;
     border-right: none !important;
-    background: #080f1e !important;
+}
+/* When collapsed, push it off the RIGHT edge instead of left */
+[data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(100%) !important;
+}
+[data-testid="stSidebar"][aria-expanded="true"] {
+    transform: translateX(0%) !important;
 }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
@@ -1974,6 +1950,10 @@ st.markdown("""
     padding-right: 0.6rem !important;
     overflow-y: auto !important;
 }
+/* ── Shift main content left when sidebar open ───────────────────────────── */
+[data-testid="stMain"] {
+    transition: margin-right 0.3s ease !important;
+}
 /* ── Hide ALL native Streamlit sidebar toggle controls ──────────────────── */
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
@@ -1981,17 +1961,14 @@ st.markdown("""
 button[data-testid="baseButton-headerNoPadding"],
 section[data-testid="stSidebar"] > div > div > div > button {
     display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-    overflow: hidden !important;
-    pointer-events: none !important;
+    width: 0 !important; height: 0 !important;
+    overflow: hidden !important; pointer-events: none !important;
 }
 /* ── Chat input ──────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
-    color: #f1f5f9 !important;
-    font-size: 0.8rem !important;
+    color: #f1f5f9 !important; font-size: 0.8rem !important;
     border-radius: 10px !important;
 }
 [data-testid="stSidebar"] [data-testid="stChatInput"] button {
@@ -2004,6 +1981,23 @@ section[data-testid="stSidebar"] > div > div > div > button {
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
+/* ── Style the SAGE open button in nav ──────────────────────────────────── */
+div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
+    background: #1e3a6e !important;
+    border: 1px solid rgba(56,189,248,0.5) !important;
+    color: #38bdf8 !important;
+    font-family: monospace !important;
+    font-weight: 800 !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 1.5px !important;
+    border-radius: 8px !important;
+    padding: 0.3rem 0.8rem !important;
+    margin-top: 0.15rem !important;
+}
+div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
+    background: #2a52a0 !important;
+    border-color: #38bdf8 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2436,31 +2430,21 @@ def _render_sage_panel():
   </div>
 </div>""", unsafe_allow_html=True)
     with _hdr_r:
-        st.markdown("""
-<style>
-#sage-close-btn {
-    background: transparent;
-    border: 1px solid rgba(100,116,139,0.4);
-    color: #64748b; font-size: 1rem; font-weight: 400;
-    padding: 2px 8px; border-radius: 6px;
-    cursor: pointer; margin-top: 14px; float: right;
+        st.markdown("""<style>
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
+    background: transparent !important;
+    border: 1px solid rgba(100,116,139,0.4) !important;
+    color: #64748b !important; font-size: 0.9rem !important;
+    padding: 0.15rem 0.5rem !important; border-radius: 6px !important;
+    margin-top: 0.9rem !important; letter-spacing: 0 !important;
 }
-#sage-close-btn:hover { color: #e2e8f0; border-color: #38bdf8; }
-</style>
-<button id="sage-close-btn" onclick="
-  (function(){
-    var frame = window.parent.document;
-    var btn = frame.querySelector('[data-testid=\"stSidebarCollapseButton\"] button')
-           || frame.querySelector('button[aria-expanded=\"true\"]');
-    if(btn){ btn.click(); }
-    else {
-      var sb = frame.querySelector('[data-testid=\"stSidebar\"]');
-      if(sb){ sb.style.transform='translateX(100%)'; }
-    }
-    document.getElementById('sage-open-btn') && (document.getElementById('sage-open-btn').style.display='block');
-  })();
-">✕</button>
-""", unsafe_allow_html=True)
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
+    color: #e2e8f0 !important; border-color: #38bdf8 !important;
+}
+</style>""", unsafe_allow_html=True)
+        if st.button("✕", key="sage_close_btn", help="Close SAGE"):
+            st.session_state.sage_open = False
+            st.rerun()
     st.markdown("<hr style='margin:0 0 0.6rem;border-color:rgba(56,189,248,0.18)'/>",
                 unsafe_allow_html=True)
 
