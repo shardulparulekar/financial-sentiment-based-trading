@@ -793,7 +793,7 @@ _mons_nav  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov",
 _clock_str = (f"{_days_nav[_now_utc.weekday()]} {_now_utc.day} "
               f"{_mons_nav[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC")
 
-_nav_left, _nav_right = st.columns([1, 0.001])
+_nav_left, _ = st.columns([1, 0.001])
 with _nav_left:
     st.markdown(f"""
 <div style="display:flex;align-items:center;justify-content:space-between;
@@ -812,25 +812,24 @@ with _nav_left:
 
 
 # ── Floating SAGE FAB ─────────────────────────────────────────────────────────
-# Inject a zero-height marker div with a unique ID, then use CSS to position
-# the very next stElementContainer (which contains our button) as fixed FAB
+# The anchor div sits inside stElementContainer A.
+# The button sits inside stElementContainer B (next sibling of A).
+# CSS: stElementContainer:has(#sage-fab-anchor) + stElementContainer { position:fixed }
 _sage_right = "320px" if st.session_state.sage_open else "24px"
-st.markdown(f'<div id="sage-fab-anchor"></div>', unsafe_allow_html=True)
 st.markdown(f"""
 <style>
-/* Position the element container immediately after our anchor as a FAB */
-#sage-fab-anchor + div,
-#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type {{
+/* Target the stElementContainer that FOLLOWS the one containing our anchor */
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] {{
     position: fixed !important;
     bottom: 28px !important;
     right: {_sage_right} !important;
     z-index: 9998 !important;
     width: auto !important;
     transition: right 0.3s ease !important;
-    pointer-events: auto !important;
 }}
-#sage-fab-anchor + div button,
-#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type button {{
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button {{
     background: #2563eb !important;
     border: 2px solid rgba(56,189,248,0.5) !important;
     color: white !important;
@@ -844,8 +843,8 @@ st.markdown(f"""
     min-width: 95px !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }}
-#sage-fab-anchor + div button:hover,
-#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type button:hover {{
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button:hover {{
     background: #1d4ed8 !important;
     box-shadow: 0 6px 28px rgba(37,99,235,0.7) !important;
     transform: scale(1.06) !important;
@@ -858,6 +857,7 @@ st.markdown(f"""
     }}
 }}
 </style>
+<div id="sage-fab-anchor" style="display:none"></div>
 """, unsafe_allow_html=True)
 
 if not st.session_state.sage_open:
