@@ -28,7 +28,7 @@ st.set_page_config(
     page_title="Sentiment Signal",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded" if st.session_state.sage_open else "collapsed",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
@@ -811,30 +811,44 @@ with _nav_left:
 """, unsafe_allow_html=True)
 
 with _nav_right:
-    st.markdown("""<style>
-/* SAGE nav button — hidden when sidebar is open (sage_open=True) */
-div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
-    background: #1e3a6e !important;
-    border: 1px solid rgba(56,189,248,0.5) !important;
-    color: #38bdf8 !important;
-    font-family: monospace !important;
-    font-weight: 800 !important;
-    font-size: 0.78rem !important;
-    letter-spacing: 1.5px !important;
-    border-radius: 8px !important;
-    padding: 0.3rem 0.7rem !important;
-    margin-top: 0.2rem !important;
-}
-div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
-    background: #2a52a0 !important;
-    border-color: #38bdf8 !important;
-}
-</style>""", unsafe_allow_html=True)
-    # Only show the SAGE button when sidebar is closed
-    if not st.session_state.sage_open:
-        if st.button("SAGE ›", key="sage_toggle_btn", help="Open SAGE Signal Assistant"):
-            st.session_state.sage_open = True
-            st.rerun()
+    # Pure HTML button fixed top-right — clicks Streamlit's own sidebar toggle via JS
+    # This is the only approach that reliably works across reruns
+    st.markdown(f"""
+<style>
+#sage-open-btn {{
+    position: fixed;
+    top: 14px; right: 16px;
+    z-index: 9999;
+    background: #1e3a6e;
+    border: 1px solid rgba(56,189,248,0.5);
+    color: #38bdf8;
+    font-family: monospace;
+    font-weight: 800;
+    font-size: 0.78rem;
+    letter-spacing: 1.5px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: {'none' if st.session_state.sage_open else 'block'};
+}}
+#sage-open-btn:hover {{ background: #2a52a0; border-color: #38bdf8; }}
+</style>
+<button id="sage-open-btn" onclick="
+  (function(){{
+    var frame = window.parent.document;
+    var btn = frame.querySelector('[data-testid=\\"stSidebarCollapsedControl\\"] button')
+           || frame.querySelector('button[aria-expanded=\\"false\\"][class*=\\"sidebar\\"]')
+           || frame.querySelector('[data-testid=\\"stSidebarCollapseButton\\"]');
+    if(btn){{ btn.click(); }}
+    else {{
+      // Fallback: find sidebar and force it visible
+      var sb = frame.querySelector('[data-testid=\\"stSidebar\\"]');
+      if(sb){{ sb.style.transform='none'; sb.style.display='block'; }}
+    }}
+  }})();
+  document.getElementById('sage-open-btn').style.display='none';
+">SAGE ›</button>
+""", unsafe_allow_html=True)
 
 
 # Tab pills row
@@ -2422,22 +2436,31 @@ def _render_sage_panel():
   </div>
 </div>""", unsafe_allow_html=True)
     with _hdr_r:
-        st.markdown("""<style>
-[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
-    background: transparent !important;
-    border: 1px solid rgba(100,116,139,0.4) !important;
-    color: #64748b !important; font-size: 1rem !important;
-    font-weight: 400 !important; letter-spacing: 0 !important;
-    padding: 0.1rem 0.45rem !important; border-radius: 6px !important;
-    margin-top: 0.85rem !important; width: auto !important;
+        st.markdown("""
+<style>
+#sage-close-btn {
+    background: transparent;
+    border: 1px solid rgba(100,116,139,0.4);
+    color: #64748b; font-size: 1rem; font-weight: 400;
+    padding: 2px 8px; border-radius: 6px;
+    cursor: pointer; margin-top: 14px; float: right;
 }
-[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
-    color: #e2e8f0 !important; border-color: #38bdf8 !important;
-}
-</style>""", unsafe_allow_html=True)
-        if st.button("✕", key="sage_close_btn", help="Close SAGE"):
-            st.session_state.sage_open = False
-            st.rerun()
+#sage-close-btn:hover { color: #e2e8f0; border-color: #38bdf8; }
+</style>
+<button id="sage-close-btn" onclick="
+  (function(){
+    var frame = window.parent.document;
+    var btn = frame.querySelector('[data-testid=\"stSidebarCollapseButton\"] button')
+           || frame.querySelector('button[aria-expanded=\"true\"]');
+    if(btn){ btn.click(); }
+    else {
+      var sb = frame.querySelector('[data-testid=\"stSidebar\"]');
+      if(sb){ sb.style.transform='translateX(100%)'; }
+    }
+    document.getElementById('sage-open-btn') && (document.getElementById('sage-open-btn').style.display='block');
+  })();
+">✕</button>
+""", unsafe_allow_html=True)
     st.markdown("<hr style='margin:0 0 0.6rem;border-color:rgba(56,189,248,0.18)'/>",
                 unsafe_allow_html=True)
 
