@@ -811,63 +811,59 @@ with _nav_left:
 """, unsafe_allow_html=True)
 
 
-# Floating SAGE FAB — always visible bottom-right, styled via CSS
-# We render a real st.button but position it fixed via CSS
+# ── Floating SAGE FAB ─────────────────────────────────────────────────────────
+# Inject a zero-height marker div with a unique ID, then use CSS to position
+# the very next stElementContainer (which contains our button) as fixed FAB
+_sage_right = "320px" if st.session_state.sage_open else "24px"
+st.markdown(f'<div id="sage-fab-anchor"></div>', unsafe_allow_html=True)
 st.markdown(f"""
 <style>
-/* ── Floating SAGE button — bottom-right, always visible ────────────────── */
-div[data-testid="stFixedFab"] {{
+/* Position the element container immediately after our anchor as a FAB */
+#sage-fab-anchor + div,
+#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type {{
     position: fixed !important;
-    bottom: 24px !important;
-    right: {'320px' if st.session_state.sage_open else '24px'} !important;
+    bottom: 28px !important;
+    right: {_sage_right} !important;
     z-index: 9998 !important;
     width: auto !important;
     transition: right 0.3s ease !important;
+    pointer-events: auto !important;
 }}
-/* Target the FAB container by a unique class we add via st.empty marker */
-.sage-fab-wrapper {{
-    position: fixed;
-    bottom: 24px;
-    right: {'320px' if st.session_state.sage_open else '24px'};
-    z-index: 9998;
-    transition: right 0.3s ease;
-}}
-.sage-fab-wrapper button {{
+#sage-fab-anchor + div button,
+#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type button {{
     background: #2563eb !important;
-    border: 2px solid rgba(56,189,248,0.6) !important;
+    border: 2px solid rgba(56,189,248,0.5) !important;
     color: white !important;
     font-family: monospace !important;
     font-weight: 800 !important;
     font-size: 0.85rem !important;
     letter-spacing: 2px !important;
     border-radius: 50px !important;
-    padding: 10px 20px !important;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.5) !important;
-    cursor: pointer !important;
-    min-width: 90px !important;
-    transition: transform 0.15s, box-shadow 0.15s !important;
+    padding: 10px 22px !important;
+    box-shadow: 0 4px 24px rgba(37,99,235,0.55) !important;
+    min-width: 95px !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }}
-.sage-fab-wrapper button:hover {{
+#sage-fab-anchor + div button:hover,
+#sage-fab-anchor ~ div[data-testid="stElementContainer"]:first-of-type button:hover {{
     background: #1d4ed8 !important;
     box-shadow: 0 6px 28px rgba(37,99,235,0.7) !important;
-    transform: scale(1.05) !important;
+    transform: scale(1.06) !important;
 }}
-/* ── Desktop only (≥1024px): push main content left when SAGE open ─────── */
+/* Desktop (≥1024px): push main content left when SAGE panel open */
 @media (min-width: 1024px) {{
-    {'[data-testid="stMain"] { margin-right: 290px !important; transition: margin-right 0.3s ease !important; }' if st.session_state.sage_open else '[data-testid="stMain"] { margin-right: 0 !important; transition: margin-right 0.3s ease !important; }'}
+    [data-testid="stMain"] {{
+        margin-right: {'290px' if st.session_state.sage_open else '0'} !important;
+        transition: margin-right 0.3s ease !important;
+    }}
 }}
 </style>
 """, unsafe_allow_html=True)
 
-# Render the FAB inside a positioned wrapper
-_fab_placeholder = st.empty()
-with _fab_placeholder.container():
-    st.markdown('<div class="sage-fab-wrapper">', unsafe_allow_html=True)
-    if not st.session_state.sage_open:
-        if st.button("SAGE ›", key="sage_open_btn", help="Open SAGE Signal Assistant"):
-            st.session_state.sage_open = True
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+if not st.session_state.sage_open:
+    if st.button("SAGE ›", key="sage_open_btn", help="Open SAGE Signal Assistant"):
+        st.session_state.sage_open = True
+        st.rerun()
 
 
 # Tab pills row
