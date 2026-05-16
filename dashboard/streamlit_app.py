@@ -812,56 +812,63 @@ with _nav_left:
 
 
 # ── Floating SAGE FAB ─────────────────────────────────────────────────────────
-# The anchor div sits inside stElementContainer A.
-# The button sits inside stElementContainer B (next sibling of A).
-# CSS: stElementContainer:has(#sage-fab-anchor) + stElementContainer { position:fixed }
-_sage_right = "320px" if st.session_state.sage_open else "24px"
+_sage_right  = "310px" if st.session_state.sage_open else "24px"
+_sage_icon   = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA1NiI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzFlNDBhZiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMwZTc0OTAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxyZWN0IHdpZHRoPSI1NiIgaGVpZ2h0PSI1NiIgcng9IjE0IiBmaWxsPSJ1cmwoJTIzYmcpIi8+CiAgPHBvbHlsaW5lIHBvaW50cz0iNCwyOCAxMCwyOCAxNCwxNCAxOCw0MiAyMiwxOCAyNiwzNiAzMCwxMCAzNCw0NCA0MiwyOCA1MiwyOCIKICAgIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMi41IgogICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPg=="
+
 st.markdown(f"""
 <style>
-/* Target the stElementContainer that FOLLOWS the one containing our anchor */
+/* ── FAB container (next stElementContainer after anchor) ───────────────── */
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] {{
     position: fixed !important;
-    bottom: 28px !important;
+    bottom: 72px !important;
     right: {_sage_right} !important;
     z-index: 9998 !important;
     width: auto !important;
     transition: right 0.3s ease !important;
 }}
+/* ── FAB button style: round image button ───────────────────────────────── */
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] button {{
-    background: #2563eb !important;
-    border: 2px solid rgba(56,189,248,0.5) !important;
-    color: white !important;
-    font-family: monospace !important;
-    font-weight: 800 !important;
-    font-size: 0.85rem !important;
-    letter-spacing: 2px !important;
-    border-radius: 50px !important;
-    padding: 10px 22px !important;
-    box-shadow: 0 4px 24px rgba(37,99,235,0.55) !important;
-    min-width: 95px !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 4px 20px rgba(37,99,235,0.6), 0 0 0 2px rgba(56,189,248,0.3) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+    overflow: hidden !important;
+    background-image: url("{_sage_icon}") !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    color: transparent !important;
+    font-size: 0 !important;
 }}
 [data-testid="stElementContainer"]:has(#sage-fab-anchor)
   + [data-testid="stElementContainer"] button:hover {{
-    background: #1d4ed8 !important;
-    box-shadow: 0 6px 28px rgba(37,99,235,0.7) !important;
-    transform: scale(1.06) !important;
+    transform: scale(1.1) !important;
+    box-shadow: 0 6px 28px rgba(37,99,235,0.75), 0 0 0 3px rgba(56,189,248,0.5) !important;
 }}
-/* Desktop (≥1024px): push main content left when SAGE panel open */
+[data-testid="stElementContainer"]:has(#sage-fab-anchor)
+  + [data-testid="stElementContainer"] button p {{
+    display: none !important;
+}}
+/* ── Desktop (≥1024px): push content left when SAGE open ───────────────── */
 @media (min-width: 1024px) {{
-    [data-testid="stMain"] {{
-        margin-right: {'290px' if st.session_state.sage_open else '0'} !important;
-        transition: margin-right 0.3s ease !important;
+    [data-testid="stMainBlockContainer"] {{
+        padding-right: {'300px' if st.session_state.sage_open else '1rem'} !important;
+        transition: padding-right 0.3s ease !important;
     }}
 }}
 </style>
-<div id="sage-fab-anchor" style="display:none"></div>
+<div id="sage-fab-anchor" style="display:none;height:0;overflow:hidden"></div>
 """, unsafe_allow_html=True)
 
 if not st.session_state.sage_open:
-    if st.button("SAGE ›", key="sage_open_btn", help="Open SAGE Signal Assistant"):
+    if st.button("SAGE", key="sage_open_btn", help="Open SAGE Signal Assistant"):
         st.session_state.sage_open = True
         st.rerun()
 
