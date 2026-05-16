@@ -793,7 +793,7 @@ _mons_nav  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov",
 _clock_str = (f"{_days_nav[_now_utc.weekday()]} {_now_utc.day} "
               f"{_mons_nav[_now_utc.month-1]}  {_now_utc.strftime('%H:%M')} UTC")
 
-_nav_left, _nav_right = st.columns([9, 1])
+_nav_left, _nav_right = st.columns([1, 0.001])
 with _nav_left:
     st.markdown(f"""
 <div style="display:flex;align-items:center;justify-content:space-between;
@@ -810,13 +810,64 @@ with _nav_left:
 </div>
 """, unsafe_allow_html=True)
 
-with _nav_right:
-    # Real Streamlit button — always works, no JS needed
+
+# Floating SAGE FAB — always visible bottom-right, styled via CSS
+# We render a real st.button but position it fixed via CSS
+st.markdown(f"""
+<style>
+/* ── Floating SAGE button — bottom-right, always visible ────────────────── */
+div[data-testid="stFixedFab"] {{
+    position: fixed !important;
+    bottom: 24px !important;
+    right: {'320px' if st.session_state.sage_open else '24px'} !important;
+    z-index: 9998 !important;
+    width: auto !important;
+    transition: right 0.3s ease !important;
+}}
+/* Target the FAB container by a unique class we add via st.empty marker */
+.sage-fab-wrapper {{
+    position: fixed;
+    bottom: 24px;
+    right: {'320px' if st.session_state.sage_open else '24px'};
+    z-index: 9998;
+    transition: right 0.3s ease;
+}}
+.sage-fab-wrapper button {{
+    background: #2563eb !important;
+    border: 2px solid rgba(56,189,248,0.6) !important;
+    color: white !important;
+    font-family: monospace !important;
+    font-weight: 800 !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 2px !important;
+    border-radius: 50px !important;
+    padding: 10px 20px !important;
+    box-shadow: 0 4px 20px rgba(37,99,235,0.5) !important;
+    cursor: pointer !important;
+    min-width: 90px !important;
+    transition: transform 0.15s, box-shadow 0.15s !important;
+}}
+.sage-fab-wrapper button:hover {{
+    background: #1d4ed8 !important;
+    box-shadow: 0 6px 28px rgba(37,99,235,0.7) !important;
+    transform: scale(1.05) !important;
+}}
+/* ── Desktop only (≥1024px): push main content left when SAGE open ─────── */
+@media (min-width: 1024px) {{
+    {'[data-testid="stMain"] { margin-right: 290px !important; transition: margin-right 0.3s ease !important; }' if st.session_state.sage_open else '[data-testid="stMain"] { margin-right: 0 !important; transition: margin-right 0.3s ease !important; }'}
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# Render the FAB inside a positioned wrapper
+_fab_placeholder = st.empty()
+with _fab_placeholder.container():
+    st.markdown('<div class="sage-fab-wrapper">', unsafe_allow_html=True)
     if not st.session_state.sage_open:
-        if st.button("SAGE ›", key="sage_open_btn",
-                     help="Open SAGE Signal Assistant", type="secondary"):
+        if st.button("SAGE ›", key="sage_open_btn", help="Open SAGE Signal Assistant"):
             st.session_state.sage_open = True
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # Tab pills row
@@ -1927,30 +1978,26 @@ else:
 # ── Sidebar CSS: right-side panel, hides native controls ──────────────────────
 st.markdown("""
 <style>
-/* ── Sidebar: fixed position on RIGHT, slides in/out from right edge ────── */
+/* ── Sidebar: fixed right, slides in from right edge ────────────────────── */
 [data-testid="stSidebar"] {
     position: fixed !important;
-    top: 0 !important;
-    left: auto !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 18rem !important;
-    min-width: 18rem !important;
-    max-width: 18rem !important;
+    top: 0 !important; left: auto !important;
+    right: 0 !important; bottom: 0 !important;
+    width: 290px !important;
+    min-width: 290px !important; max-width: 290px !important;
     background: #080f1e !important;
     border-left: 1px solid rgba(56,189,248,0.25) !important;
     border-right: none !important;
     transition: transform 0.3s ease !important;
     z-index: 999 !important;
-    overflow: hidden !important;
 }
-/* Collapsed: hide off the RIGHT edge (not left) */
+/* Collapsed: hidden off right edge, invisible */
 [data-testid="stSidebar"][aria-expanded="false"] {
     transform: translateX(110%) !important;
     visibility: hidden !important;
     pointer-events: none !important;
 }
-/* Open: slide in from right */
+/* Open: visible, at right edge */
 [data-testid="stSidebar"][aria-expanded="true"] {
     transform: translateX(0%) !important;
     visibility: visible !important;
@@ -1959,10 +2006,8 @@ st.markdown("""
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
-    padding-left: 0.6rem !important;
-    padding-right: 0.6rem !important;
-    height: 100% !important;
-    overflow-y: auto !important;
+    padding-left: 0.6rem !important; padding-right: 0.6rem !important;
+    height: 100% !important; overflow-y: auto !important;
 }
 /* ── Hide ALL native Streamlit sidebar toggle controls ──────────────────── */
 [data-testid="stSidebarCollapsedControl"],
@@ -1991,23 +2036,6 @@ section[data-testid="stSidebar"] > div > div > div > button {
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
-/* ── Style the SAGE open button in nav ──────────────────────────────────── */
-div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
-    background: #1e3a6e !important;
-    border: 1px solid rgba(56,189,248,0.5) !important;
-    color: #38bdf8 !important;
-    font-family: monospace !important;
-    font-weight: 800 !important;
-    font-size: 0.78rem !important;
-    letter-spacing: 1.5px !important;
-    border-radius: 8px !important;
-    padding: 0.3rem 0.8rem !important;
-    margin-top: 0.15rem !important;
-}
-div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
-    background: #2a52a0 !important;
-    border-color: #38bdf8 !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
