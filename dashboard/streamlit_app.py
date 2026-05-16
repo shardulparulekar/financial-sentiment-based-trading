@@ -812,7 +812,7 @@ with _nav_left:
 
 with _nav_right:
     st.markdown("""<style>
-/* SAGE button in nav — always visible top-right */
+/* SAGE nav button — hidden when sidebar is open (sage_open=True) */
 div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
     background: #1e3a6e !important;
     border: 1px solid rgba(56,189,248,0.5) !important;
@@ -830,10 +830,11 @@ div[data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover
     border-color: #38bdf8 !important;
 }
 </style>""", unsafe_allow_html=True)
-    _sage_label = "✕ SAGE" if st.session_state.sage_open else "SAGE ›"
-    if st.button(_sage_label, key="sage_toggle_btn", help="Toggle SAGE Signal Assistant"):
-        st.session_state.sage_open = not st.session_state.sage_open
-        st.rerun()
+    # Only show the SAGE button when sidebar is closed
+    if not st.session_state.sage_open:
+        if st.button("SAGE ›", key="sage_toggle_btn", help="Open SAGE Signal Assistant"):
+            st.session_state.sage_open = True
+            st.rerun()
 
 
 # Tab pills row
@@ -1941,24 +1942,42 @@ else:
 
 
 
-# ── Desktop sidebar CSS (only injected on desktop) ────────────────────────────
+# ── Sidebar CSS: right-side panel, hides native controls ──────────────────────
 st.markdown("""
 <style>
+/* ── Move sidebar to RIGHT side ─────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-    background: #080f1e !important;
-    border-left: 1px solid rgba(56,189,248,0.18) !important;
+    left: auto !important;
+    right: 0 !important;
+    border-left: 1px solid rgba(56,189,248,0.25) !important;
     border-right: none !important;
+    background: #080f1e !important;
 }
 [data-testid="stSidebar"] > div:first-child {
     background: #080f1e !important;
     padding-top: 0 !important;
-    padding-left: 0.6rem !important; padding-right: 0.6rem !important;
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
     overflow-y: auto !important;
 }
+/* ── Hide ALL native Streamlit sidebar toggle controls ──────────────────── */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+button[data-testid="baseButton-headerNoPadding"],
+section[data-testid="stSidebar"] > div > div > div > button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+/* ── Chat input ──────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
     background: #0c1824 !important;
     border: 1px solid rgba(56,189,248,0.25) !important;
-    color: #f1f5f9 !important; font-size: 0.8rem !important;
+    color: #f1f5f9 !important;
+    font-size: 0.8rem !important;
     border-radius: 10px !important;
 }
 [data-testid="stSidebar"] [data-testid="stChatInput"] button {
@@ -1973,6 +1992,7 @@ st.markdown("""
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 
@@ -2387,21 +2407,40 @@ for _k in list(st.session_state.sage_tickers.keys()):
 
 # ── Shared SAGE UI — called from sidebar (desktop) or dialog (mobile) ──────────
 def _render_sage_panel():
-    """Render the full SAGE chat UI. Works inside st.sidebar or st.dialog."""
-    # Header
-    st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.65rem;
-            padding:0.9rem 0.6rem 0.8rem;margin:-0.5rem -0.6rem 0.7rem;
-            border-bottom:1px solid rgba(56,189,248,0.18);
-            background:#0f2044;">
-  <img src="{_SAGE_URI}" width="36" height="36"
-       style="border-radius:9px;flex-shrink:0;display:block;"/>
+    """Render the full SAGE chat UI inside st.sidebar."""
+    # ── Header row: icon/title left, close button right ───────────────────────
+    _hdr_l, _hdr_r = st.columns([5, 1])
+    with _hdr_l:
+        st.markdown(f"""
+<div style="display:flex;align-items:center;gap:0.6rem;padding:0.8rem 0 0.65rem;">
+  <img src="{_SAGE_URI}" width="34" height="34"
+       style="border-radius:8px;flex-shrink:0;display:block;"/>
   <div>
-    <div style="font-size:0.9rem;font-weight:800;color:#f1f5f9;
+    <div style="font-size:0.88rem;font-weight:800;color:#f1f5f9;
                 font-family:monospace;letter-spacing:2.5px;line-height:1.2;">SAGE</div>
-    <div style="font-size:0.63rem;color:#38bdf8;margin-top:1px;">Signal Assistant</div>
+    <div style="font-size:0.62rem;color:#38bdf8;margin-top:1px;">Signal Assistant</div>
   </div>
 </div>""", unsafe_allow_html=True)
+    with _hdr_r:
+        st.markdown("""<style>
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button {
+    background: transparent !important;
+    border: 1px solid rgba(100,116,139,0.4) !important;
+    color: #64748b !important; font-size: 1rem !important;
+    font-weight: 400 !important; letter-spacing: 0 !important;
+    padding: 0.1rem 0.45rem !important; border-radius: 6px !important;
+    margin-top: 0.85rem !important; width: auto !important;
+}
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div:last-child button:hover {
+    color: #e2e8f0 !important; border-color: #38bdf8 !important;
+}
+</style>""", unsafe_allow_html=True)
+        if st.button("✕", key="sage_close_btn", help="Close SAGE"):
+            st.session_state.sage_open = False
+            st.rerun()
+    st.markdown("<hr style='margin:0 0 0.6rem;border-color:rgba(56,189,248,0.18)'/>",
+                unsafe_allow_html=True)
+
 
     # Quick-start buttons when empty
     if not st.session_state.sage_msgs and not st.session_state.sage_flow:
