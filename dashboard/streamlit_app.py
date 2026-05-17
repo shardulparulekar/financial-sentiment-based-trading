@@ -23,6 +23,8 @@ logging.basicConfig(level=logging.WARNING)
 
 if "sage_open" not in st.session_state:
     st.session_state.sage_open = False
+if "sage_fresh_signals" not in st.session_state:
+    st.session_state.sage_fresh_signals = {}
 
 st.set_page_config(
     page_title="Sentiment Signal",
@@ -2228,9 +2230,6 @@ if "sage_pending"      not in st.session_state: st.session_state.sage_pending   
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
-# sage_fresh_signals: dict of ticker→signal_dict from live SAGE fetches
-# shown as a banner on home page so user sees fresh results immediately
-if "sage_fresh_signals" not in st.session_state: st.session_state.sage_fresh_signals = {}
 # sage_open already initialised before set_page_config above
 
 
