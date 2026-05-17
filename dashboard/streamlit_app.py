@@ -1301,7 +1301,7 @@ if st.session_state.active_tab == "home":
 
     # ── Market sentiment ──────────────────────────────────────────────────────
     st.markdown("#### 🧠 Market sentiment (FinBERT)")
-    st.caption("Aggregate sentiment scored from representative stock baskets — updates hourly.")
+    st.caption("Aggregate sentiment scored from representative stock baskets — scored live via FinBERT, cached for 1 hour per session.")
 
     with st.spinner("Scoring market sentiment…"):
         mkt_sentiment = load_market_sentiment()
@@ -2352,7 +2352,7 @@ def _synth_answer(msgs, ctx):
         if buys:  parts.append(f"Top BUYs: {', '.join(buys[:3])}.")
         if sells: parts.append(f"Top SELLs: {', '.join(sells[:3])}.")
 
-    return "\n".join(parts) + "\n\n_Data-driven — AI model offline._" if parts else ctx
+    return "\n".join(parts) if parts else ctx
 
 def _hf_call(msgs, ctx):
     """HuggingFace LLM call with data-driven fallback."""
@@ -2450,15 +2450,21 @@ if st.session_state.sage_pending:
     _hits = _sk_find(_pend)
 
     if _hits and len(_hits) == 1:
-        # Unambiguous ticker match — answer directly
+        # Unambiguous ticker match — fetch fresh signal
         st.session_state.sage_msgs.append({"role": "user", "content": _pend})
         _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
+        # Fix 3: store with correct message index (assistant msg goes next)
+        if _ttup:
+            _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
+                     len(st.session_state.sage_msgs))  # index of assistant msg
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
         if _ttup and _tkey:
             st.session_state.sage_tickers[_tkey] = _ttup
+        # Fix 2: clear top signals cache so main page reflects new signal
+        load_top_signals.clear()
 
     elif _is_general_q:
-        # General question — answer from data context
+        # Fix 4: fetch LIVE signals and sentiment, no "AI model offline" message
         _top  = load_top_signals(n=20)
         _sent = load_market_sentiment()
         _ctx  = []
@@ -2470,8 +2476,13 @@ if st.session_state.sage_pending:
             _ctx.append("Sentiment: " + " | ".join(
                 f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
                 for mk, d in _sent.items()))
+        # Try HF model first; _synth_answer is the fallback but remove "offline" note
         _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
                         "\n".join(_ctx) or "No data.")
+        # Strip the "AI model offline" footer since data IS live from Supabase/FinBERT
+        _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
+                   .replace("\n_Data-driven — AI model offline._", "")\
+                   .strip()
         st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
 
@@ -2499,18 +2510,31 @@ for _k in list(st.session_state.sage_tickers.keys()):
 # ── Shared SAGE UI — called from sidebar (desktop) or dialog (mobile) ──────────
 def _render_sage_panel():
     """Render the full SAGE chat UI inside st.sidebar."""
-    # ── Header row: icon/title left, close button right ───────────────────────
+    # ── Header row: FAB-style icon + subtitle left, close button right ────────
     _hdr_l, _hdr_r = st.columns([5, 1])
     with _hdr_l:
-        st.markdown(f"""
-<div style="display:flex;align-items:center;gap:0.6rem;padding:0.8rem 0 0.65rem;">
-  <img src="{_SAGE_URI}" width="34" height="34"
-       style="border-radius:8px;flex-shrink:0;display:block;"/>
-  <div>
-    <div style="font-size:0.88rem;font-weight:800;color:#f1f5f9;
-                font-family:monospace;letter-spacing:2.5px;line-height:1.2;">SAGE</div>
-    <div style="font-size:0.62rem;color:#38bdf8;margin-top:1px;">Signal Assistant</div>
+        st.markdown("""
+<div style="display:flex;align-items:center;gap:0.65rem;padding:0.8rem 0 0.65rem;">
+  <!-- Same gradient+waveform icon as FAB, rendered inline so text/filters work -->
+  <div style="
+    width:48px;height:48px;border-radius:12px;flex-shrink:0;
+    background:linear-gradient(135deg,#1e40af,#0e7490,#0f4c75);
+    border:1px solid rgba(103,232,249,0.35);
+    box-shadow:0 2px 10px rgba(37,99,235,0.4);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;">
+    <div style="display:flex;align-items:flex-end;gap:2px;height:18px;">
+      <div style="width:3px;height:8px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+      <div style="width:3px;height:16px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+      <div style="width:3px;height:11px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+      <div style="width:3px;height:18px;background:#00e5ff;border-radius:2px;box-shadow:0 0 6px #00e5ff"></div>
+      <div style="width:3px;height:13px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+      <div style="width:3px;height:17px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+      <div style="width:3px;height:9px;background:rgba(224,247,255,0.85);border-radius:2px"></div>
+    </div>
+    <div style="font-family:monospace;font-size:7px;font-weight:800;
+                letter-spacing:2.5px;color:rgba(224,247,255,0.9);line-height:1">SAGE</div>
   </div>
+  <div style="font-size:0.62rem;color:#38bdf8;line-height:1.4;">Signal Assistant</div>
 </div>""", unsafe_allow_html=True)
     with _hdr_r:
         st.markdown("""<style>
@@ -2588,9 +2612,13 @@ def _render_sage_panel():
                         _yfsym2 = _build_yf_symbol(_ticker_raw, _mkt_opt, None)
                         _rep2, _ttup2, _tkey2 = _fetch_signal_for(
                             _yfsym2, _ticker_raw, "", _mkt_opt, None)
+                        if _ttup2:
+                            _ttup2 = (_ttup2[0], _ttup2[1], _ttup2[2], _ttup2[3],
+                                      len(st.session_state.sage_msgs))
                         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
                         if _ttup2 and _tkey2:
                             st.session_state.sage_tickers[_tkey2] = _ttup2
+                        load_top_signals.clear()
                         st.session_state.sage_flow = None
                     st.rerun()
 
@@ -2610,19 +2638,24 @@ def _render_sage_panel():
                     _yfsym3 = _build_yf_symbol(_ticker_raw, _mkt_sel, _ex_opt)
                     _rep2, _ttup2, _tkey2 = _fetch_signal_for(
                         _yfsym3, _ticker_raw, "", _mkt_sel, _ex_opt)
+                    if _ttup2:
+                        _ttup2 = (_ttup2[0], _ttup2[1], _ttup2[2], _ttup2[3],
+                                  len(st.session_state.sage_msgs))
                     st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
                     if _ttup2 and _tkey2:
                         st.session_state.sage_tickers[_tkey2] = _ttup2
+                    load_top_signals.clear()
                     st.session_state.sage_flow = None
                     st.rerun()
 
         # Open-in-analysis button after signal replies
         if not _is_user and "wizard" not in _msg:
+            # Absolute index of this message in the full history
             _abs_idx = len(st.session_state.sage_msgs) - len(_recent) + _mi
             if _abs_idx in _ticker_by_msgidx:
                 _ft2, (_m2, _e2, _d2, _c2, _) = _ticker_by_msgidx[_abs_idx]
-                if st.button(f"📊 Open {_d2} →", key=f"sop_{_ft2}_{_mi}",
-                             width='stretch', type="primary"):
+                if st.button(f"📊 Open {_d2} in full analysis →",
+                             key=f"sop_{_ft2}_{_mi}", width='stretch', type="primary"):
                     load_top_signals.clear()
                     add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
