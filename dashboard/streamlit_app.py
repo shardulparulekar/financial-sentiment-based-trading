@@ -898,7 +898,14 @@ st.markdown(f"""
     text-align: center !important;
     line-height: 1 !important;
 }}
-/* ── Desktop (≥1024px): push content when SAGE open ────────────────────── */
+/* ── FAB always visible on mobile even when sidebar is "open" ─────────── */
+@media (max-width: 768px) {{
+    [data-testid="stElementContainer"]:has(#sage-fab-anchor)
+      + [data-testid="stElementContainer"] {{
+        display: block !important;
+        visibility: visible !important;
+    }}
+}}
 @media (min-width: 1024px) {{
     [data-testid="stMainBlockContainer"] {{
         padding-right: {'300px' if st.session_state.sage_open else '1rem'} !important;
@@ -1035,14 +1042,49 @@ if st.session_state.active_tab == "home":
     st.divider()
 
     # ── Top 10 pre-computed signals ────────────────────────────────────────────
-    st.markdown("### 🏆 Top signals today")
-    st.caption(
-        "Highest-confidence buy/sell signals from the latest batch retrain — "
-        "across all 10 markets. Click any card to open a live analysis tab "
-        "and recalculate the signal fresh."
-    )
+    _sig_col, _sig_refresh_col = st.columns([8, 1])
+    with _sig_col:
+        st.markdown("### 🏆 Top signals today")
+        st.caption(
+            "Highest-confidence buy/sell signals from the latest batch retrain — "
+            "across all 10 markets. Click any card to open a live analysis tab "
+            "and recalculate the signal fresh."
+        )
+    with _sig_refresh_col:
+        st.markdown("<div style='margin-top:0.6rem'></div>", unsafe_allow_html=True)
+        if st.button("🔄", key="refresh_signals", help="Refresh signals from Supabase"):
+            load_top_signals.clear()
+            st.rerun()
 
     top_df = load_top_signals(n=10)
+
+    # ── Show fresh signals fetched via SAGE this session ──────────────────────
+    if st.session_state.sage_fresh_signals:
+        import pytz as _ptz_home
+        _fresh = st.session_state.sage_fresh_signals
+        st.markdown("##### 🟢 Recently analysed via SAGE")
+        _fresh_cols = st.columns(min(len(_fresh), 4))
+        for _i, (_sym, _fd) in enumerate(list(_fresh.items())[:4]):
+            with _fresh_cols[_i % len(_fresh_cols)]:
+                _age_s = (datetime.now(_ptz_home.utc) - _fd["fetched_at"]).total_seconds()
+                _age_str = f"{int(_age_s//60)}m ago" if _age_s > 60 else "just now"
+                _lines = _fd["rep"].split("\n")
+                _signal_line = next((l for l in _lines if "BUY" in l or "SELL" in l), "")
+                _is_buy = "BUY" in _signal_line
+                _color = "#22c55e" if _is_buy else "#ef4444"
+                st.markdown(f"""
+<div style="background:#0d1117;border:1px solid {_color}44;border-radius:10px;
+            padding:0.65rem 0.8rem;text-align:center;font-size:0.82rem;">
+  <div style="color:#9ca3af;font-size:0.7rem">{_fd.get('exchange') or _fd.get('market','')}</div>
+  <div style="font-weight:700;color:#f1f5f9;margin:2px 0">{_fd['display']}</div>
+  <div style="color:{_color};font-weight:800">{'🟢 BUY' if _is_buy else '🔴 SELL'}</div>
+  <div style="color:#6b7280;font-size:0.68rem;margin-top:3px">via SAGE · {_age_str}</div>
+</div>""", unsafe_allow_html=True)
+        if st.button("✕ Clear SAGE results", key="clear_fresh_sigs",
+                     help="Remove SAGE-fetched signals from this section"):
+            st.session_state.sage_fresh_signals = {}
+            st.rerun()
+        st.markdown("---")
 
     if top_df.empty:
         st.info(
@@ -1300,8 +1342,15 @@ if st.session_state.active_tab == "home":
                 """, unsafe_allow_html=True)
 
     # ── Market sentiment ──────────────────────────────────────────────────────
-    st.markdown("#### 🧠 Market sentiment (FinBERT)")
-    st.caption("Aggregate sentiment scored from representative stock baskets — scored live via FinBERT, cached for 1 hour per session.")
+    _sent_col, _sent_refresh_col = st.columns([8, 1])
+    with _sent_col:
+        st.markdown("#### 🧠 Market sentiment (FinBERT)")
+        st.caption("Aggregate sentiment scored from representative stock baskets — scored live via FinBERT, cached for 1 hour per session.")
+    with _sent_refresh_col:
+        st.markdown("<div style='margin-top:0.5rem'></div>", unsafe_allow_html=True)
+        if st.button("🔄", key="refresh_sentiment", help="Re-score sentiment via FinBERT"):
+            load_market_sentiment.clear()
+            st.rerun()
 
     with st.spinner("Scoring market sentiment…"):
         mkt_sentiment = load_market_sentiment()
@@ -1439,7 +1488,7 @@ else:
     currency_name, currency_sym = get_currency(market, exchange)
 
     # ── Header ─────────────────────────────────────────────────────────────────
-    hcol, dcol = st.columns([4, 1])
+    hcol, dcol, rcol = st.columns([4, 1, 1])
     with hcol:
         st.markdown(f"## {company_name} `({full_ticker})` — Sentiment Trading Signal")
         caption_parts = [f"Market: {market}"]
@@ -1453,6 +1502,13 @@ else:
     with dcol:
         days_back = st.selectbox("History", [90, 180, 365], index=2,
                                  format_func=lambda x: f"{x} days", key=f"hist_{full_ticker}")
+    with rcol:
+        st.markdown("<div style='margin-top:1.6rem'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh", key=f"refresh_tab_{full_ticker}",
+                     help="Re-run full analysis for this ticker"):
+            run_pipeline.clear()
+            load_top_signals.clear()
+            st.rerun()
 
     # ── Run pipeline ────────────────────────────────────────────────────────────
     with st.spinner(f"Running analysis for {full_ticker}… (~20s first run, cached after)"):
@@ -2172,6 +2228,9 @@ if "sage_pending"      not in st.session_state: st.session_state.sage_pending   
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
+# sage_fresh_signals: dict of ticker→signal_dict from live SAGE fetches
+# shown as a banner on home page so user sees fresh results immediately
+if "sage_fresh_signals" not in st.session_state: st.session_state.sage_fresh_signals = {}
 # sage_open already initialised before set_page_config above
 
 
@@ -2451,16 +2510,22 @@ if st.session_state.sage_pending:
 
     if _hits and len(_hits) == 1:
         # Unambiguous ticker match — fetch fresh signal
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
         _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
         # Fix 3: store with correct message index (assistant msg goes next)
         if _ttup:
             _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
                      len(st.session_state.sage_msgs))  # index of assistant msg
-        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
         if _ttup and _tkey:
             st.session_state.sage_tickers[_tkey] = _ttup
-        # Fix 2: clear top signals cache so main page reflects new signal
+        # Fix 1: store fresh signal so home page can show it immediately
+        if _ttup and _tkey:
+            st.session_state.sage_fresh_signals[_tkey] = {
+                "rep": _rep, "market": _ttup[0], "exchange": _ttup[1],
+                "display": _ttup[2], "company": _ttup[3],
+                "fetched_at": datetime.now(__import__("pytz").utc)
+            }
         load_top_signals.clear()
 
     elif _is_general_q:
@@ -2484,11 +2549,11 @@ if st.session_state.sage_pending:
                    .replace("\n_Data-driven — AI model offline._", "")\
                    .strip()
         st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
-        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep})
+        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
 
     else:
         # Short unknown word — assume it's a ticker — ask which market
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend})
+        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
         st.session_state.sage_msgs.append({
             "role": "assistant",
             "content": f"Which market is **{_pend.upper()}** traded on?",
@@ -2581,10 +2646,18 @@ def _render_sage_panel():
         _lbl  = "You"    if _is_user else "Sage"
         _lclr = "#475569" if _is_user else "#38bdf8"
         _content = _msg["content"].replace(chr(10), "<br>")
+        # Format timestamp if present
+        _ts_str = ""
+        if "ts" in _msg:
+            try:
+                _ts_str = f' · {_msg["ts"].strftime("%H:%M UTC")}'
+            except Exception:
+                pass
         st.markdown(f"""
 <div style="margin-bottom:0.4rem;margin-left:{_ml};margin-right:{_mr}">
   <div style="font-size:0.6rem;color:{_lclr};margin-bottom:2px;
-              text-align:{'right' if _is_user else 'left'};font-family:monospace;">{_lbl}</div>
+              text-align:{'right' if _is_user else 'left'};font-family:monospace;">
+    {_lbl}{_ts_str}</div>
   <div style="background:{_bg};border-radius:{_br};padding:0.45rem 0.65rem;
               font-size:0.79rem;line-height:1.6;color:#e2e8f0;
               border:1px solid rgba(255,255,255,0.07);">{_content}</div>
@@ -2615,7 +2688,7 @@ def _render_sage_panel():
                         if _ttup2:
                             _ttup2 = (_ttup2[0], _ttup2[1], _ttup2[2], _ttup2[3],
                                       len(st.session_state.sage_msgs))
-                        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
+                        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2, "ts": datetime.now(__import__("pytz").utc)})
                         if _ttup2 and _tkey2:
                             st.session_state.sage_tickers[_tkey2] = _ttup2
                         load_top_signals.clear()
@@ -2641,7 +2714,7 @@ def _render_sage_panel():
                     if _ttup2:
                         _ttup2 = (_ttup2[0], _ttup2[1], _ttup2[2], _ttup2[3],
                                   len(st.session_state.sage_msgs))
-                    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2})
+                    st.session_state.sage_msgs.append({"role": "assistant", "content": _rep2, "ts": datetime.now(__import__("pytz").utc)})
                     if _ttup2 and _tkey2:
                         st.session_state.sage_tickers[_tkey2] = _ttup2
                     load_top_signals.clear()
