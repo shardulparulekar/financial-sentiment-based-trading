@@ -25,6 +25,8 @@ if "sage_open" not in st.session_state:
     st.session_state.sage_open = False
 if "sage_fresh_signals" not in st.session_state:
     st.session_state.sage_fresh_signals = {}
+if "sentiment_last_calc" not in st.session_state:
+    st.session_state.sentiment_last_calc = None
 
 st.set_page_config(
     page_title="Sentiment Signal",
@@ -1054,39 +1056,40 @@ if st.session_state.active_tab == "home":
         )
     with _sig_refresh_col:
         st.markdown("<div style='margin-top:0.6rem'></div>", unsafe_allow_html=True)
-        if st.button("🔄", key="refresh_signals", help="Refresh signals from Supabase"):
+        if st.button("🔄", key="refresh_signals", help="Recalculate top signals fresh and save to database"):
+            with st.spinner("Recalculating top signals…"):
+                try:
+                    from src.feedback_logger import FeedbackLogger
+                    from datetime import date as _date_r
+                    _fb_r   = FeedbackLogger()
+                    _today_r = _date_r.today().isoformat()
+                    # Re-run pipeline for each ticker in the current top signals
+                    _cur_top = load_top_signals(n=20)
+                    if not _cur_top.empty:
+                        for _, _row in _cur_top.iterrows():
+                            try:
+                                _tk = _row["ticker"]
+                                _m  = _row.get("market", "")
+                                _ex = _row.get("exchange")
+                                _yfsym_r = _build_yf_symbol(_tk.split(".")[0], _m, _ex)
+                                _sig_r = _live_sig_universal(_yfsym_r, _m, _ex)
+                                if _sig_r:
+                                    _fb_r.log_prediction(
+                                        ticker=_tk,
+                                        trade_date=_today_r,
+                                        predicted=_sig_r["predicted"],
+                                        confidence=_sig_r["confidence"],
+                                        sentiment=_sig_r["sentiment"],
+                                        force=True
+                                    )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
             load_top_signals.clear()
             st.rerun()
 
     top_df = load_top_signals(n=10)
-
-    # ── Show fresh signals fetched via SAGE this session ──────────────────────
-    if st.session_state.sage_fresh_signals:
-        import pytz as _ptz_home
-        _fresh = st.session_state.sage_fresh_signals
-        st.markdown("##### 🟢 Recently analysed via SAGE")
-        _fresh_cols = st.columns(min(len(_fresh), 4))
-        for _i, (_sym, _fd) in enumerate(list(_fresh.items())[:4]):
-            with _fresh_cols[_i % len(_fresh_cols)]:
-                _age_s = (datetime.now(_ptz_home.utc) - _fd["fetched_at"]).total_seconds()
-                _age_str = f"{int(_age_s//60)}m ago" if _age_s > 60 else "just now"
-                _lines = _fd["rep"].split("\n")
-                _signal_line = next((l for l in _lines if "BUY" in l or "SELL" in l), "")
-                _is_buy = "BUY" in _signal_line
-                _color = "#22c55e" if _is_buy else "#ef4444"
-                st.markdown(f"""
-<div style="background:#0d1117;border:1px solid {_color}44;border-radius:10px;
-            padding:0.65rem 0.8rem;text-align:center;font-size:0.82rem;">
-  <div style="color:#9ca3af;font-size:0.7rem">{_fd.get('exchange') or _fd.get('market','')}</div>
-  <div style="font-weight:700;color:#f1f5f9;margin:2px 0">{_fd['display']}</div>
-  <div style="color:{_color};font-weight:800">{'🟢 BUY' if _is_buy else '🔴 SELL'}</div>
-  <div style="color:#6b7280;font-size:0.68rem;margin-top:3px">via SAGE · {_age_str}</div>
-</div>""", unsafe_allow_html=True)
-        if st.button("✕ Clear SAGE results", key="clear_fresh_sigs",
-                     help="Remove SAGE-fetched signals from this section"):
-            st.session_state.sage_fresh_signals = {}
-            st.rerun()
-        st.markdown("---")
 
     if top_df.empty:
         st.info(
@@ -1347,15 +1350,24 @@ if st.session_state.active_tab == "home":
     _sent_col, _sent_refresh_col = st.columns([8, 1])
     with _sent_col:
         st.markdown("#### 🧠 Market sentiment (FinBERT)")
-        st.caption("Aggregate sentiment scored from representative stock baskets — scored live via FinBERT, cached for 1 hour per session.")
+        _sent_time_str = ""
+        if st.session_state.sentiment_last_calc:
+            import pytz as _sptz
+            _s_age = (datetime.now(_sptz.utc) - st.session_state.sentiment_last_calc).total_seconds()
+            _sent_time_str = f" · Last scored: {int(_s_age//60)}m ago" if _s_age > 60 else " · Last scored: just now"
+        st.caption(f"Scored live via FinBERT, cached 1h per session.{_sent_time_str}")
     with _sent_refresh_col:
         st.markdown("<div style='margin-top:0.5rem'></div>", unsafe_allow_html=True)
         if st.button("🔄", key="refresh_sentiment", help="Re-score sentiment via FinBERT"):
             load_market_sentiment.clear()
+            st.session_state.sentiment_last_calc = datetime.now(__import__("pytz").utc)
             st.rerun()
 
     with st.spinner("Scoring market sentiment…"):
         mkt_sentiment = load_market_sentiment()
+    # Record first-load time
+    if mkt_sentiment and st.session_state.sentiment_last_calc is None:
+        st.session_state.sentiment_last_calc = datetime.now(__import__("pytz").utc)
 
     if mkt_sentiment:
         SENTIMENT_MARKETS = ["🇺🇸 USA", "🇮🇳 India", "🇪🇺 Europe", "🇨🇳 China / HK", "🇯🇵 Japan"]
@@ -2518,13 +2530,28 @@ if st.session_state.sage_pending:
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
         if _ttup and _tkey:
             st.session_state.sage_tickers[_tkey] = _ttup
-        # Fix 1: store fresh signal so home page can show it immediately
+        # Save fresh signal to Supabase so it appears in top signals on home page
         if _ttup and _tkey:
-            st.session_state.sage_fresh_signals[_tkey] = {
-                "rep": _rep, "market": _ttup[0], "exchange": _ttup[1],
-                "display": _ttup[2], "company": _ttup[3],
-                "fetched_at": datetime.now(__import__("pytz").utc)
-            }
+            _m2s, _e2s, _d2s, _c2s, _ = _ttup
+            try:
+                from src.feedback_logger import FeedbackLogger
+                from datetime import date as _date_s
+                _sig_to_save = st.session_state.sage_fresh_signals.get(_tkey, {})
+                # Parse signal from reply text
+                _is_buy_s = "BUY" in _rep
+                _conf_s   = float(next((p.split("%")[0] for p in _rep.split() if "%" in p), "50")) / 100
+                _sent_s   = float(next((p for p in _rep.replace("(","").replace(")","").split()
+                                        if p.startswith(("+","-")) and "." in p), "0"))
+                FeedbackLogger().log_prediction(
+                    ticker=_tkey,
+                    trade_date=_date_s.today().isoformat(),
+                    predicted=1 if _is_buy_s else -1,
+                    confidence=_conf_s,
+                    sentiment=_sent_s,
+                    force=True
+                )
+            except Exception:
+                pass
         load_top_signals.clear()
 
     elif _is_general_q:
