@@ -22,6 +22,8 @@ BUY / SELL / HOLD + confidence score + sentiment disagreement gauge
 Backtested with 10bps transaction costs
     ↓
 Prediction logged to Supabase → actual filled next trading day → retrain
+    ↓
+SAGE assistant — any ticker, any market, live signal on demand
 ```
 
 ---
@@ -36,7 +38,7 @@ Prediction logged to Supabase → actual filled next trading day → retrain
 | 4 | `src/prediction.py` | Random Forest, walk-forward CV, 5 folds |
 | 5 | `src/backtesting.py` | Strategy vs buy-and-hold, Sharpe, drawdown, win rate |
 | 6 | `api/app.py` | FastAPI REST endpoints |
-| 7 | `dashboard/streamlit_app.py` | Streamlit dashboard — dark theme, multi-market, 5 analysis tabs |
+| 7 | `dashboard/streamlit_app.py` | Streamlit dashboard — dark theme, multi-market, SAGE assistant |
 | 8 | `src/feedback_logger.py` | Supabase feedback loop — smart dedup, orphan cleanup |
 | 9 | `scripts/daily_retrain.py` | GitHub Actions — daily retrain across 100 tickers / 10 markets |
 
@@ -49,7 +51,7 @@ Prediction logged to Supabase → actual filled next trading day → retrain
 | 🇺🇸 USA | NYSE / NASDAQ | NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, BRK-B, AVGO, LLY |
 | 🇬🇧 UK | LSE (.L) | SHEL, HSBA, ULVR, BP, AZN, GSK, DGE, RIO, BATS, BARC |
 | 🇩🇪 Germany | XETRA (.DE) | SAP, SIE, VOW3, MBG, ALV, BAS, BMW, DTE, IFX, ADS |
-| 🇳🇱 Netherlands | AEX (.AS) | ASML, PRX, INGA, HEIA, AGN, ASRNL, ARGX, RAND + NXPI, AIR.PA |
+| 🇳🇱 Netherlands | AEX (.AS) | ASML, PRX, INGA, HEIA, AGN, ASRNL, ABN, RAND, ADYEN, WKL |
 | 🇫🇷 France | Euronext Paris (.PA) | MC, TTE, OR, SU, AIR, SAN, BNP, CS, SAF, RMS |
 | 🇨🇭 Switzerland | SIX (.SW) | NESN, ROG, NOVN, UBSG, ZURN, ABBN, CFR, SREN, LONN, HOLN |
 | 🇮🇹 Italy | Borsa Italiana (.MI) | ENEL, ENI, RACE, ISP, UCG, STLAM, PIRC, TIT, LDO, MONC |
@@ -63,7 +65,7 @@ Prediction logged to Supabase → actual filled next trading day → retrain
 
 Runs every day at **13:00 UTC including weekends** via GitHub Actions. Weekend news (earnings, analyst reports, geopolitical events) affects Monday's opening price — skipping weekends would mean Monday's prediction uses stale Friday sentiment.
 
-**On weekdays:** fresh price data + fresh news → full retrain
+**On weekdays:** fresh price data + fresh news → full retrain  
 **On weekends:** Friday EOD prices + weekend headlines → sentiment-updated signal
 
 **Batch rotation** (stays within 2,000 min/month free tier):
@@ -90,23 +92,51 @@ Every prediction is logged to Supabase. The next day's actual price direction fi
 
 ## Dashboard
 
-**Home page**
+### Home page
 - 🌍 Six global index cards with 30-day sparklines and live open/closed/pre-market status
-- 🧠 Market-wide FinBERT sentiment per region
+- 🏆 Top signals today — highest-confidence BUY/SELL from latest batch, with manual 🔄 refresh that recalculates fresh and saves to Supabase
+- 🧠 Market-wide FinBERT sentiment per region with last-scored timestamp and manual 🔄 refresh
 - 🔥 Trending financial news (live RSS)
 - 🔍 Global news search
-- 🕐 User's local time and timezone (JavaScript, updates every second)
 - 📅 Weekend mode banner with explanation
 
-**Per-ticker tabs**
-- 📈 Price vs Sentiment — bars colour-coded by direction AND disagreement (amber = divided headlines)
-- 💼 Backtest — equity curve vs buy-and-hold
-- 🧠 Model — feature importance, walk-forward results, active model indicator
-- 📰 Headlines — searchable, grouped by Bullish / Neutral / Bearish
-- 📊 Model Performance — live accuracy chart from Supabase
+### Per-ticker analysis tabs
+Each ticker opens a persistent tab with full analysis:
 
-**Sentiment disagreement panel**
+| Tab | Content |
+|-----|---------|
+| 📈 Price vs Sentiment | Bars colour-coded by direction AND disagreement (amber = divided headlines) |
+| 💼 Backtest | Equity curve vs buy-and-hold, Sharpe, drawdown, win rate |
+| 🧠 Model | Feature importance, walk-forward results, active model indicator |
+| 📰 Headlines | Searchable, grouped by Bullish / Neutral / Bearish |
+| 📊 Model Performance | Live accuracy chart from Supabase |
+
+Each tab has a **🔄 Refresh** button that re-runs the full FinBERT + yfinance pipeline and saves a fresh signal to Supabase.
+
+### Sentiment disagreement panel
 Shows headline split %, disagreement gauge (Low/Moderate/High based on std_score), and plain-English interpretation. High disagreement = market hasn't priced in uncertainty = larger move possible.
+
+---
+
+## SAGE — Signal Assistant
+
+SAGE is an AI-powered chat panel accessible via a floating button (bottom-right on desktop, FAB on mobile) that lets users ask about any ticker or market in natural language.
+
+### How SAGE works
+- **Guided wizard flow** — user types any ticker → SAGE asks which market (buttons) → if Europe, asks which exchange (buttons) → fetches live signal immediately
+- **Universal ticker lookup** — works for any yfinance symbol worldwide, not just the tracked list. Tries FinBERT pipeline first; falls back to yfinance price momentum if the model is unavailable
+- **DB write-back** — every SAGE signal is saved to Supabase via `log_prediction(force=True)`. High-confidence results naturally replace lower-confidence entries in the top signals table
+- **General questions** — "What's the strongest signal?", "Which markets are bearish?" — answered from live Supabase data with optional HuggingFace LLM enhancement
+- **Timestamps** — every message shows the UTC time it was generated
+- **Open in full analysis** — each ticker signal has a button to open the full 5-tab analysis
+
+### Enabling the HuggingFace LLM (optional)
+SAGE works without a token using data-driven answers. To enable natural-language LLM responses:
+```toml
+[huggingface]
+token = "hf_xxxx"
+```
+Add to Streamlit Cloud → App Settings → Secrets.
 
 ---
 
@@ -139,9 +169,10 @@ Shows headline split %, disagreement gauge (Low/Moderate/High based on std_score
 |-----------|-----------|
 | Sentiment (primary) | ProsusAI/finbert (~440MB, ~1.5GB RAM) |
 | Sentiment (fallback) | yiyanghkust/finbert-tone (~110MB, auto-switches on OOM) |
+| SAGE LLM (optional) | Meta-Llama-3-8B-Instruct via HuggingFace Inference API |
 | ML | scikit-learn Random Forest |
 | News | RSS via feedparser — no API key |
-| Prices | yfinance — 10 markets |
+| Prices | yfinance — 10 markets + any global ticker |
 | Database | Supabase Postgres (free tier) |
 | API | FastAPI |
 | Dashboard | Streamlit Community Cloud |
@@ -169,13 +200,19 @@ pip install -r requirements.txt
 streamlit run dashboard/streamlit_app.py
 ```
 
-No API keys needed. Uses RSS feeds and yfinance — both free and keyless.
+No API keys needed for core functionality. Uses RSS feeds and yfinance — both free and keyless.
 
 **Enable Supabase feedback loop** — add to Streamlit Cloud → App Settings → Secrets:
 ```toml
 [supabase]
 url = "https://xxxx.supabase.co"
 key = "sb_publishable_xxxx"
+```
+
+**Enable HuggingFace LLM for SAGE** (optional):
+```toml
+[huggingface]
+token = "hf_xxxx"
 ```
 
 **Enable GitHub Actions retraining** — add to GitHub → Settings → Secrets → Actions:
@@ -199,24 +236,26 @@ financial-sentiment-based-trading/
 ├── requirements.txt
 │
 ├── src/
-│   ├── rss_ingester.py       stage 1: news ingestion
-│   ├── sentiment_model.py    stage 2: FinBERT + auto-fallback
+│   ├── rss_ingester.py        stage 1: news ingestion
+│   ├── sentiment_model.py     stage 2: FinBERT + auto-fallback
 │   ├── feature_engineering.py stage 3: 22 features incl. disagreement
-│   ├── prediction.py         stage 4: Random Forest, walk-forward CV
-│   ├── backtesting.py        stage 5: strategy simulation
-│   ├── feedback_logger.py    stage 8: Supabase feedback + 2-pass cleanup
-│   ├── market_sentiment.py   market-wide sentiment aggregation
-│   ├── load_data.py          smart data loader
-│   └── ticker_utils.py       ticker/exchange utilities
+│   ├── prediction.py          stage 4: Random Forest, walk-forward CV
+│   ├── backtesting.py         stage 5: strategy simulation
+│   ├── feedback_logger.py     stage 8: Supabase feedback + 2-pass cleanup
+│   ├── market_sentiment.py    market-wide sentiment aggregation
+│   ├── data_ingestion.py      unified data ingestion layer
+│   ├── load_data.py           smart data loader
+│   ├── retrainer.py           model retraining logic
+│   └── ticker_utils.py        ticker/exchange utilities
 │
-├── api/app.py                stage 6: FastAPI REST
-├── dashboard/streamlit_app.py stage 7: Streamlit UI
+├── api/app.py                 stage 6: FastAPI REST
+├── dashboard/streamlit_app.py stage 7: Streamlit UI + SAGE assistant
 │
 ├── scripts/
-│   ├── daily_retrain.py      stage 9: automated retraining (BATCH_A/BATCH_B)
-│   └── supabase_setup.sql    one-time DB + RLS + pg_cron setup
+│   ├── daily_retrain.py       stage 9: automated retraining (BATCH_A/BATCH_B)
+│   └── supabase_setup.sql     one-time DB + RLS + pg_cron setup
 │
-└── data/sample/              pre-fetched sample data
+└── data/sample/               pre-fetched sample data
 ```
 
 ---
@@ -231,5 +270,8 @@ financial-sentiment-based-trading/
 | Sentiment disagreement | std_score more predictive than mean score alone |
 | Smart dedup (1 row/day) | Intraday rescoring updates only on meaningful change |
 | FinBERT auto-fallback | Graceful degradation on memory-constrained servers |
-| Two-pass cleanup | Normal pass removes incorporated rows; orphan pass removes unresolved rows that would otherwise accumulate indefinitely |
+| Two-pass cleanup | Normal pass removes incorporated rows; orphan pass removes unresolved rows |
 | 10bps transaction costs | Realistic, not cherry-picked backtest results |
+| SAGE universal ticker | yfinance covers 60,000+ symbols — no tracked-list restriction |
+| SAGE DB write-back | Live signals write to Supabase so top signals update organically |
+| Price momentum fallback | When FinBERT unavailable (Streamlit Cloud), yfinance 10-day momentum gives a directional signal |
