@@ -2471,11 +2471,60 @@ def _fetch_signal_for(yf_symbol: str, display_ticker: str, company: str,
                       market: str, exchange):
     """
     Fetch a FRESH signal for ANY yfinance symbol — no tracked list required.
-    Always runs live analysis (FinBERT → price fallback).
+
+    Priority order (matches what the main ticker tab shows):
+      1. run_pipeline cache — if the user already opened this ticker in a tab,
+         the full Random Forest result is cached. Use it directly so SAGE and
+         the main tab always show the same signal.
+      2. _live_sig_universal — FinBERT pipeline (same FinBERT path as main tab)
+         or price-momentum fallback if FinBERT unavailable.
+
+    This prevents the mismatch where SAGE showed BUY (price momentum) while
+    the main tab showed SELL (Random Forest on actual news features).
     """
     import pytz as _ptz3
-    with st.spinner(f"Running fresh analysis for {display_ticker}…"):
-        _sig = _live_sig_universal(yf_symbol, market, exchange)
+
+    _sig = None
+    _source_label = ""
+
+    # ── Priority 1: Check run_pipeline cache ──────────────────────────────────
+    # run_pipeline is @st.cache_data — we can probe it by looking at the
+    # Streamlit cache. If already cached, calling it is instant (no re-run).
+    # We try with the most common days_back values the user may have opened.
+    _pipeline_result = None
+    for _days in [365, 180, 90, 30]:
+        try:
+            _pipeline_result = run_pipeline(yf_symbol, _days)
+            break
+        except Exception:
+            continue
+
+    if _pipeline_result:
+        try:
+            import pytz as _ptz4
+            _signal     = int(_pipeline_result["signal"])
+            _confidence = float(_pipeline_result["confidence"])
+            _daily      = _pipeline_result.get("daily")
+            _s = float(_daily.iloc[-1]["mean_score"]) if _daily is not None and not _daily.empty else 0.0
+            _sig = {
+                "predicted":  _signal,
+                "confidence": _confidence,
+                "sentiment":  _s,
+                "updated_at": datetime.now(_ptz4.utc),
+                "live": True, "source": "pipeline",
+            }
+            _source_label = " · Random Forest model"
+        except Exception:
+            _sig = None
+
+    # ── Priority 2: FinBERT or price-momentum fallback ────────────────────────
+    if not _sig:
+        with st.spinner(f"Running fresh analysis for {display_ticker}…"):
+            _sig = _live_sig_universal(yf_symbol, market, exchange)
+        _source_label = {
+            "finbert": " · FinBERT live",
+            "price":   " · price momentum",
+        }.get((_sig or {}).get("source", ""), "")
 
     if _sig:
         _is_up = _sig["predicted"] == 1
@@ -2485,13 +2534,11 @@ def _fetch_signal_for(yf_symbol: str, display_ticker: str, company: str,
         except: _sc = 0
         _age   = f"{int(_sc//60)}m ago" if _sc < 3600 else f"{int(_sc//3600)}h {int((_sc%3600)//60)}m ago"
         _exlb  = f" ({exchange})" if exchange else f" ({market})" if market else ""
-        _src   = {"finbert": " · FinBERT live", "price": " · price momentum"}.get(
-                  _sig.get("source", ""), "")
         _arts  = f" · {_sig['articles']} articles" if _sig.get("articles") else ""
         _name  = _sig.get("name") or company or display_ticker
         _rep   = (f"{display_ticker}{_exlb} — {_name}\n\n"
                   f"{'🟢 BUY' if _is_up else '🔴 SELL'} · {_sig['confidence']:.0%} confidence\n\n"
-                  f"Sentiment: {_sl} ({_s:+.3f}){_arts} · ⏱ {_age}{_src}")
+                  f"Sentiment: {_sl} ({_s:+.3f}){_arts} · ⏱ {_age}{_source_label}")
         _next  = len(st.session_state.sage_msgs) + 1
         return _rep, (market, exchange, display_ticker, _name, _next), yf_symbol
     else:
