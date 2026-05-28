@@ -47,7 +47,18 @@ CREATE POLICY "app_update" ON predictions
 CREATE POLICY "app_delete" ON predictions
     FOR DELETE TO anon USING (retrained = true);
 
--- 4. Automated cleanup via pg_cron
+-- 4. Explicit GRANTs (required as of Supabase breaking change 2026-04-28)
+-- ──────────────────────────────────────────────────────────────────────────────
+-- As of May 30 2026, new Supabase projects no longer auto-expose public schema
+-- tables to the Data API. Explicit GRANTs are now required — RLS alone is not
+-- enough. Without these, PostgREST returns 42501 "permission denied" before
+-- RLS policies are even evaluated.
+-- See: https://github.com/orgs/supabase/discussions/45329
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO service_role;
+
+-- 5. Automated cleanup via pg_cron
 -- ──────────────────────────────────────────────────────────────────────────────
 -- Runs at 2am UTC daily (before any market opens globally).
 -- Deletes retrained rows older than 30 days.
@@ -83,7 +94,7 @@ SELECT cron.schedule(
 -- To remove the job if needed:
 -- SELECT cron.unschedule('daily-predictions-cleanup');
 
--- 5. Optional: check row count at any time
+-- 6. Optional: check row count at any time
 -- ──────────────────────────────────────────────────────────────────────────────
 -- SELECT
 --     COUNT(*)                                          AS total_rows,
