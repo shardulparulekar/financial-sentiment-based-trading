@@ -2553,100 +2553,6 @@ _EU_MKT        = "🇪🇺 Europe"
 _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
-# ── Process pending free-text message ─────────────────────────────────────────
-# Stage 1: user just submitted — stash message, raise thinking flag, rerun to
-# show the animated "thinking" bubble before the heavy work begins.
-if st.session_state.sage_pending and not st.session_state.sage_thinking:
-    _pend_stage1 = st.session_state.sage_pending
-    st.session_state.sage_pending   = None
-    st.session_state.sage_thinking  = True
-    st.session_state._sage_pend_txt = _pend_stage1
-    st.session_state.sage_msgs.append({"role": "user", "content": _pend_stage1,
-                                       "ts": datetime.now(__import__("pytz").utc)})
-    st.rerun()
-
-# Stage 2: thinking flag is set — do the real work, then clear it.
-if st.session_state.sage_thinking:
-    _pend = st.session_state.get("_sage_pend_txt", "")
-    st.session_state.sage_thinking = False
-
-    _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
-                      "bullish","sell","buy","confidence","what","which","top",
-                      "high","low","best","worst","today","now","right","explain",
-                      "tell","show","give","list","any","all","current","overall"}
-    _pend_words   = set(_pend.lower().replace("?","").replace("-"," ").split())
-    _is_general_q = len(_pend_words & _GENERAL_WORDS) >= 2 or len(_pend.split()) > 4
-
-    _hits = _sk_find(_pend)
-
-    if _hits and len(_hits) == 1:
-        # Unambiguous ticker match — fetch fresh signal (user msg already appended in Stage 1)
-        _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
-        # Fix 3: store with correct message index (assistant msg goes next)
-        if _ttup:
-            _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
-                     len(st.session_state.sage_msgs))  # index of assistant msg
-        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
-        if _ttup and _tkey:
-            st.session_state.sage_tickers[_tkey] = _ttup
-        # Save fresh signal to Supabase so it appears in top signals on home page
-        if _ttup and _tkey:
-            _m2s, _e2s, _d2s, _c2s, _ = _ttup
-            try:
-                from src.feedback_logger import FeedbackLogger
-                from datetime import date as _date_s
-                _sig_to_save = st.session_state.sage_fresh_signals.get(_tkey, {})
-                # Parse signal from reply text
-                _is_buy_s = "BUY" in _rep
-                _conf_s   = float(next((p.split("%")[0] for p in _rep.split() if "%" in p), "50")) / 100
-                _sent_s   = float(next((p for p in _rep.replace("(","").replace(")","").split()
-                                        if p.startswith(("+","-")) and "." in p), "0"))
-                FeedbackLogger().log_prediction(
-                    ticker=_tkey,
-                    trade_date=_date_s.today().isoformat(),
-                    predicted=1 if _is_buy_s else -1,
-                    confidence=_conf_s,
-                    sentiment=_sent_s,
-                    force=True
-                )
-            except Exception:
-                pass
-        load_top_signals.clear()
-
-    elif _is_general_q:
-        # Fix 4: fetch LIVE signals and sentiment, no "AI model offline" message
-        _top  = load_top_signals(n=20)
-        _sent = load_market_sentiment()
-        _ctx  = []
-        if _top is not None and not _top.empty:
-            _ctx.append("Signals: " + ", ".join(
-                f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                for _, r in _top.head(10).iterrows()))
-        if _sent:
-            _ctx.append("Sentiment: " + " | ".join(
-                f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                for mk, d in _sent.items()))
-        # Try HF model first; _synth_answer is the fallback but remove "offline" note
-        _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
-                        "\n".join(_ctx) or "No data.")
-        # Strip the "AI model offline" footer since data IS live from Supabase/FinBERT
-        _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
-                   .replace("\n_Data-driven — AI model offline._", "")\
-                   .strip()
-        # user msg already appended in Stage 1
-        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
-
-    else:
-        # Short unknown word — assume it's a ticker — ask which market (user msg already in Stage 1)
-        st.session_state.sage_msgs.append({
-            "role": "assistant",
-            "content": f"Which market is **{_pend.upper()}** traded on?",
-            "wizard": "market"
-        })
-        st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
-
-
-
 # ── SAGE icon ──────────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTAiIGZpbGw9IiMyNTYzZWIiLz4KICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxOC41IiB3aWR0aD0iMjAiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMjciIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIyNyIgeT0iMTguNSIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
 
@@ -2749,16 +2655,6 @@ def _render_sage_panel():
     # Messages + wizard buttons
     _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
     _recent = st.session_state.sage_msgs[-40:]
-
-    # Show thinking bubble after last message while SAGE is processing
-    if st.session_state.sage_thinking:
-        st.markdown("""
-<div style="margin-bottom:0.4rem;margin-right:1.2rem">
-  <div class="sage-thinking-label">Sage</div>
-  <div class="sage-thinking-bubble">
-    <span></span><span></span><span></span>
-  </div>
-</div>""", unsafe_allow_html=True)
 
     for _mi, _msg in enumerate(_recent):
         _is_user = _msg["role"] == "user"
@@ -2868,6 +2764,98 @@ def _render_sage_panel():
     _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if _inp:
         st.session_state.sage_pending = _inp
+        st.rerun()
+
+    # ── Inline processing with thinking bubble ────────────────────────────────
+    # Runs in the SAME render pass so the animated bubble is visible in the
+    # sidebar while the heavy work (yfinance / HF model) is happening.
+    if st.session_state.sage_pending:
+        _pend = st.session_state.sage_pending
+        st.session_state.sage_pending = None
+
+        # Append user message immediately so it shows above the bubble
+        st.session_state.sage_msgs.append({"role": "user", "content": _pend,
+                                           "ts": datetime.now(__import__("pytz").utc)})
+
+        # Render the thinking bubble into a placeholder
+        _think_slot = st.empty()
+        _think_slot.markdown("""
+<div style="margin-bottom:0.4rem;margin-right:1.2rem">
+  <div class="sage-thinking-label">Sage</div>
+  <div class="sage-thinking-bubble">
+    <span></span><span></span><span></span>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+        # ── Do the actual work ──────────────────────────────────────────────
+        _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
+                          "bullish","sell","buy","confidence","what","which","top",
+                          "high","low","best","worst","today","now","right","explain",
+                          "tell","show","give","list","any","all","current","overall"}
+        _pend_words   = set(_pend.lower().replace("?","").replace("-"," ").split())
+        _is_general_q = len(_pend_words & _GENERAL_WORDS) >= 2 or len(_pend.split()) > 4
+        _hits = _sk_find(_pend)
+
+        if _hits and len(_hits) == 1:
+            _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
+            if _ttup:
+                _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
+                         len(st.session_state.sage_msgs))
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep,
+                                               "ts": datetime.now(__import__("pytz").utc)})
+            if _ttup and _tkey:
+                st.session_state.sage_tickers[_tkey] = _ttup
+            if _ttup and _tkey:
+                _m2s, _e2s, _d2s, _c2s, _ = _ttup
+                try:
+                    from src.feedback_logger import FeedbackLogger
+                    from datetime import date as _date_s
+                    _is_buy_s = "BUY" in _rep
+                    _conf_s   = float(next((p.split("%")[0] for p in _rep.split() if "%" in p), "50")) / 100
+                    _sent_s   = float(next((p for p in _rep.replace("(","").replace(")","").split()
+                                            if p.startswith(("+","-")) and "." in p), "0"))
+                    FeedbackLogger().log_prediction(
+                        ticker=_tkey,
+                        trade_date=_date_s.today().isoformat(),
+                        predicted=1 if _is_buy_s else -1,
+                        confidence=_conf_s,
+                        sentiment=_sent_s,
+                        force=True
+                    )
+                except Exception:
+                    pass
+            load_top_signals.clear()
+
+        elif _is_general_q:
+            _top  = load_top_signals(n=20)
+            _sent = load_market_sentiment()
+            _ctx  = []
+            if _top is not None and not _top.empty:
+                _ctx.append("Signals: " + ", ".join(
+                    f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                    for _, r in _top.head(10).iterrows()))
+            if _sent:
+                _ctx.append("Sentiment: " + " | ".join(
+                    f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                    for mk, d in _sent.items()))
+            _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
+                            "\n".join(_ctx) or "No data.")
+            _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
+                       .replace("\n_Data-driven — AI model offline._", "")\
+                       .strip()
+            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep,
+                                               "ts": datetime.now(__import__("pytz").utc)})
+
+        else:
+            st.session_state.sage_msgs.append({
+                "role": "assistant",
+                "content": f"Which market is **{_pend.upper()}** traded on?",
+                "wizard": "market"
+            })
+            st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
+
+        # Clear the bubble and rerun to render the real answer
+        _think_slot.empty()
         st.rerun()
 
 
