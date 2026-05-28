@@ -2151,6 +2151,15 @@ section[data-testid="stSidebar"] > div > div > div > button {
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
+/* ── Prevent sidebar blur/grey during Streamlit reruns ──────────────────────── */
+[data-testid="stSidebar"] { opacity: 1 !important; pointer-events: auto !important; }
+[data-testid="stSidebar"] [data-testid="stChatInput"],
+[data-testid="stSidebar"] [data-testid="stChatInput"] textarea,
+[data-testid="stSidebar"] [data-testid="stChatInput"] > div {
+    opacity: 1 !important;
+    filter: none !important;
+    pointer-events: auto !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2611,14 +2620,16 @@ def _render_sage_panel():
                 unsafe_allow_html=True)
 
 
-    # Quick-start buttons when empty
-    if not st.session_state.sage_msgs and not st.session_state.sage_flow:
+    # Quick-start buttons — only when chat is empty AND not processing
+    if not st.session_state.sage_msgs and not st.session_state.sage_flow and not st.session_state.sage_pending:
         st.caption("Quick questions:")
         for _sg in ["What's the strongest signal?",
                     "Which markets are bearish?",
                     "Top BUY signals right now",
                     "High-confidence SELL signals?"]:
             if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
+                st.session_state.sage_msgs.append({"role": "user", "content": _sg,
+                                                   "ts": datetime.now(__import__("pytz").utc)})
                 st.session_state.sage_pending = _sg
                 st.rerun()
         st.caption("Or type any ticker below ↓")
@@ -2850,10 +2861,37 @@ def _render_sage_panel():
             st.session_state.sage_flow    = None
             st.rerun()
 
+    # Keep native st.chat_input for Streamlit state — but use CSS to stop it
+    # blurring/greying the entire input. We only visually disable the send button.
+    _is_processing = bool(st.session_state.sage_pending)
+    if _is_processing:
+        # Inject CSS that keeps the textarea looking active but dims the send btn
+        st.markdown("""<style>
+[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    color: #e2e8f0 !important;
+    background: rgba(15,23,42,0.8) !important;
+    cursor: text !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatInput"] button {
+    opacity: 0.35 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatInput"] {
+    opacity: 1 !important;
+    filter: none !important;
+}
+/* Kill the global disabled overlay Streamlit puts on the whole app */
+[data-testid="stSidebar"] .stChatInput > div {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+}
+</style>""", unsafe_allow_html=True)
+
     _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if _inp:
-        # Store user message NOW so it's visible on the very next render
-        # (before processing starts), then set pending for the work pass.
         st.session_state.sage_msgs.append({"role": "user", "content": _inp,
                                            "ts": datetime.now(__import__("pytz").utc)})
         st.session_state.sage_pending = _inp
