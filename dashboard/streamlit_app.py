@@ -2239,6 +2239,7 @@ section[data-testid="stSidebar"] > div > div > div > button {
 
 if "sage_msgs"         not in st.session_state: st.session_state.sage_msgs         = []
 if "sage_pending"      not in st.session_state: st.session_state.sage_pending      = None
+if "sage_thinking"     not in st.session_state: st.session_state.sage_thinking     = False
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
@@ -2553,9 +2554,21 @@ _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
 # ── Process pending free-text message ─────────────────────────────────────────
-if st.session_state.sage_pending:
-    _pend = st.session_state.sage_pending
-    st.session_state.sage_pending = None
+# Stage 1: user just submitted — stash message, raise thinking flag, rerun to
+# show the animated "thinking" bubble before the heavy work begins.
+if st.session_state.sage_pending and not st.session_state.sage_thinking:
+    _pend_stage1 = st.session_state.sage_pending
+    st.session_state.sage_pending   = None
+    st.session_state.sage_thinking  = True
+    st.session_state._sage_pend_txt = _pend_stage1
+    st.session_state.sage_msgs.append({"role": "user", "content": _pend_stage1,
+                                       "ts": datetime.now(__import__("pytz").utc)})
+    st.rerun()
+
+# Stage 2: thinking flag is set — do the real work, then clear it.
+if st.session_state.sage_thinking:
+    _pend = st.session_state.get("_sage_pend_txt", "")
+    st.session_state.sage_thinking = False
 
     _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
                       "bullish","sell","buy","confidence","what","which","top",
@@ -2567,8 +2580,7 @@ if st.session_state.sage_pending:
     _hits = _sk_find(_pend)
 
     if _hits and len(_hits) == 1:
-        # Unambiguous ticker match — fetch fresh signal
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        # Unambiguous ticker match — fetch fresh signal (user msg already appended in Stage 1)
         _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
         # Fix 3: store with correct message index (assistant msg goes next)
         if _ttup:
@@ -2621,12 +2633,11 @@ if st.session_state.sage_pending:
         _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
                    .replace("\n_Data-driven — AI model offline._", "")\
                    .strip()
-        st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+        # user msg already appended in Stage 1
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
 
     else:
-        # Short unknown word — assume it's a ticker — ask which market
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        # Short unknown word — assume it's a ticker — ask which market (user msg already in Stage 1)
         st.session_state.sage_msgs.append({
             "role": "assistant",
             "content": f"Which market is **{_pend.upper()}** traded on?",
@@ -2706,9 +2717,48 @@ def _render_sage_panel():
                 st.rerun()
         st.caption("Or type any ticker below ↓")
 
+
+    # ── Thinking animation CSS ────────────────────────────────────────────────
+    st.markdown("""<style>
+@keyframes sage-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0);   opacity: 0.4; }
+  40%            { transform: translateY(-5px); opacity: 1;   }
+}
+.sage-thinking-bubble {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(8,20,40,0.7);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px 12px 12px 3px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.4rem;
+}
+.sage-thinking-bubble span {
+    display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #38bdf8;
+    animation: sage-dot-bounce 1.2s infinite ease-in-out;
+}
+.sage-thinking-bubble span:nth-child(2) { animation-delay: 0.15s; }
+.sage-thinking-bubble span:nth-child(3) { animation-delay: 0.30s; }
+.sage-thinking-label {
+    font-size: 0.6rem; color: #38bdf8; font-family: monospace;
+    margin-bottom: 2px;
+}
+</style>""", unsafe_allow_html=True)
+
     # Messages + wizard buttons
     _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
     _recent = st.session_state.sage_msgs[-40:]
+
+    # Show thinking bubble after last message while SAGE is processing
+    if st.session_state.sage_thinking:
+        st.markdown("""
+<div style="margin-bottom:0.4rem;margin-right:1.2rem">
+  <div class="sage-thinking-label">Sage</div>
+  <div class="sage-thinking-bubble">
+    <span></span><span></span><span></span>
+  </div>
+</div>""", unsafe_allow_html=True)
 
     for _mi, _msg in enumerate(_recent):
         _is_user = _msg["role"] == "user"
