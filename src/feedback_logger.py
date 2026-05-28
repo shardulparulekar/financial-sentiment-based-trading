@@ -35,6 +35,14 @@ Schema (run in Supabase SQL Editor):
     CREATE POLICY "app_update" ON predictions FOR UPDATE TO anon USING (true);
     CREATE POLICY "app_delete" ON predictions FOR DELETE TO anon USING (retrained = true);
 
+    -- Required as of Supabase breaking change (2026-04-28):
+    -- New projects no longer auto-grant public schema tables to the Data API.
+    -- Explicit GRANTs must come BEFORE RLS policies take effect.
+    -- See: https://github.com/orgs/supabase/discussions/45329
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO anon;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO authenticated;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictions TO service_role;
+
     -- Daily cleanup via pg_cron (run this once to enable):
     CREATE EXTENSION IF NOT EXISTS pg_cron;
     SELECT cron.schedule(
