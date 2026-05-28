@@ -2751,33 +2751,15 @@ def _render_sage_panel():
                     load_top_signals.clear()
                     add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
-    # Clear + chat input
-    if st.session_state.sage_msgs:
-        st.divider()
-        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
-            st.session_state.sage_msgs    = []
-            st.session_state.sage_tickers = {}
-            st.session_state.sage_pick    = None
-            st.session_state.sage_flow    = None
-            st.rerun()
-
-    _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
-    if _inp:
-        st.session_state.sage_pending = _inp
-        st.rerun()
-
-    # ── Inline processing with thinking bubble ────────────────────────────────
-    # Runs in the SAME render pass so the animated bubble is visible in the
-    # sidebar while the heavy work (yfinance / HF model) is happening.
+    # ── Thinking bubble — shown BETWEEN messages and chat input ─────────────────
+    # sage_pending is set by chat_input below; on the NEXT render pass (after
+    # rerun) the user msg is already in sage_msgs so it shows, then we render
+    # the bubble here, then do the heavy work, then rerun to show the answer.
     if st.session_state.sage_pending:
         _pend = st.session_state.sage_pending
         st.session_state.sage_pending = None
 
-        # Append user message immediately so it shows above the bubble
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend,
-                                           "ts": datetime.now(__import__("pytz").utc)})
-
-        # Render the thinking bubble into a placeholder
+        # Thinking bubble renders right here — below all messages, above the input
         _think_slot = st.empty()
         _think_slot.markdown("""
 <div style="margin-bottom:0.4rem;margin-right:1.2rem">
@@ -2854,8 +2836,27 @@ def _render_sage_panel():
             })
             st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
 
-        # Clear the bubble and rerun to render the real answer
+        # Collapse the bubble slot and rerun to render the real answer
         _think_slot.empty()
+        st.rerun()
+
+    # Clear + chat input — always at the bottom ───────────────────────────────
+    if st.session_state.sage_msgs:
+        st.divider()
+        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
+            st.session_state.sage_msgs    = []
+            st.session_state.sage_tickers = {}
+            st.session_state.sage_pick    = None
+            st.session_state.sage_flow    = None
+            st.rerun()
+
+    _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
+    if _inp:
+        # Store user message NOW so it's visible on the very next render
+        # (before processing starts), then set pending for the work pass.
+        st.session_state.sage_msgs.append({"role": "user", "content": _inp,
+                                           "ts": datetime.now(__import__("pytz").utc)})
+        st.session_state.sage_pending = _inp
         st.rerun()
 
 
