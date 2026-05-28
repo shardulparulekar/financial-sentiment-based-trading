@@ -2134,32 +2134,13 @@ section[data-testid="stSidebar"] > div > div > div > button {
     width: 0 !important; height: 0 !important;
     overflow: hidden !important; pointer-events: none !important;
 }
-/* ── Chat input ──────────────────────────────────────────────────────────── */
-[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
-    background: #0c1824 !important;
-    border: 1px solid rgba(56,189,248,0.25) !important;
-    color: #f1f5f9 !important; font-size: 0.8rem !important;
-    border-radius: 10px !important;
-}
-[data-testid="stSidebar"] [data-testid="stChatInput"] button {
-    background: rgba(56,189,248,0.15) !important;
-    border: 1px solid rgba(56,189,248,0.3) !important;
-    color: #38bdf8 !important;
-}
+/* stChatInput styling removed — using st.text_input */
 [data-testid="stSidebar"] .stButton > button { font-size: 0.75rem !important; }
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
-/* ── Prevent sidebar blur/grey during Streamlit reruns ──────────────────────── */
-[data-testid="stSidebar"] { opacity: 1 !important; pointer-events: auto !important; }
-[data-testid="stSidebar"] [data-testid="stChatInput"],
-[data-testid="stSidebar"] [data-testid="stChatInput"] textarea,
-[data-testid="stSidebar"] [data-testid="stChatInput"] > div {
-    opacity: 1 !important;
-    filter: none !important;
-    pointer-events: auto !important;
-}
+/* stChatInput removed — using st.text_input instead */
 </style>
 """, unsafe_allow_html=True)
 
@@ -2851,7 +2832,10 @@ def _render_sage_panel():
         _think_slot.empty()
         st.rerun()
 
-    # Clear + chat input — always at the bottom ───────────────────────────────
+    # ── Bottom bar: clear + input + send ────────────────────────────────────────
+    # Using st.text_input + st.button instead of st.chat_input so that
+    # Streamlit's global rerun-disable does NOT grey out the input box.
+    # Only the send button is disabled while processing.
     if st.session_state.sage_msgs:
         st.divider()
         if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
@@ -2859,43 +2843,80 @@ def _render_sage_panel():
             st.session_state.sage_tickers = {}
             st.session_state.sage_pick    = None
             st.session_state.sage_flow    = None
+            st.session_state.sage_input   = ""
             st.rerun()
 
-    # Keep native st.chat_input for Streamlit state — but use CSS to stop it
-    # blurring/greying the entire input. We only visually disable the send button.
     _is_processing = bool(st.session_state.sage_pending)
-    if _is_processing:
-        # Inject CSS that keeps the textarea looking active but dims the send btn
-        st.markdown("""<style>
-[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    color: #e2e8f0 !important;
-    background: rgba(15,23,42,0.8) !important;
-    cursor: text !important;
+
+    # Tighten up the text_input so it sits flush with the send button
+    st.markdown("""<style>
+[data-testid="stSidebar"] [data-testid="stTextInput"] {
+    margin-bottom: 0 !important;
 }
-[data-testid="stSidebar"] [data-testid="stChatInput"] button {
-    opacity: 0.35 !important;
-    cursor: not-allowed !important;
-    pointer-events: none !important;
+[data-testid="stSidebar"] [data-testid="stTextInput"] input {
+    background: #0c1824 !important;
+    border: 1px solid rgba(56,189,248,0.25) !important;
+    color: #f1f5f9 !important;
+    font-size: 0.82rem !important;
+    border-radius: 10px !important;
+    padding: 0.45rem 0.7rem !important;
 }
-[data-testid="stSidebar"] [data-testid="stChatInput"] {
-    opacity: 1 !important;
-    filter: none !important;
+[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
+    border-color: rgba(56,189,248,0.6) !important;
+    box-shadow: 0 0 0 2px rgba(56,189,248,0.12) !important;
 }
-/* Kill the global disabled overlay Streamlit puts on the whole app */
-[data-testid="stSidebar"] .stChatInput > div {
-    pointer-events: auto !important;
-    opacity: 1 !important;
-}
+[data-testid="stSidebar"] [data-testid="stTextInput"] label { display: none !important; }
 </style>""", unsafe_allow_html=True)
 
-    _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
-    if _inp:
-        st.session_state.sage_msgs.append({"role": "user", "content": _inp,
+    if "sage_input" not in st.session_state:
+        st.session_state.sage_input = ""
+
+    _col_inp, _col_btn = st.columns([5, 1])
+    with _col_inp:
+        _txt = st.text_input("msg", value=st.session_state.sage_input,
+                             placeholder="Stock ticker or question…",
+                             key="sage_txt", label_visibility="collapsed")
+    with _col_btn:
+        _send_clicked = st.button("↑", key="sage_send_btn",
+                                  disabled=_is_processing,
+                                  help="Send" if not _is_processing else "Thinking…")
+
+    # Submit on button click. Enter key is handled by JS below which clicks the button.
+    if _send_clicked and _txt.strip() and not _is_processing:
+        _v = _txt.strip()
+        st.session_state.sage_input = ""
+        st.session_state.sage_msgs.append({"role": "user", "content": _v,
                                            "ts": datetime.now(__import__("pytz").utc)})
-        st.session_state.sage_pending = _inp
+        st.session_state.sage_pending = _v
         st.rerun()
+
+    # JS: pressing Enter in the text box clicks the send button
+    st.markdown("""<script>
+(function() {
+  function hookEnter() {
+    var inputs = window.parent.document.querySelectorAll(
+      '[data-testid="stSidebar"] [data-testid="stTextInput"] input');
+    inputs.forEach(function(inp) {
+      if (inp._sageHooked) return;
+      inp._sageHooked = true;
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var btns = window.parent.document.querySelectorAll(
+            '[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"],' +
+            '[data-testid="stSidebar"] button[kind="secondary"]');
+          btns.forEach(function(b) {
+            if (b.textContent.trim() === '↑' && !b.disabled) b.click();
+          });
+        }
+      });
+    });
+  }
+  hookEnter();
+  var obs = new MutationObserver(hookEnter);
+  obs.observe(window.parent.document.body, {childList: true, subtree: true});
+})();
+</script>""", unsafe_allow_html=True)
 
 
 # ── Render SAGE in sidebar (collapsed by default) ─────────────────────────────
