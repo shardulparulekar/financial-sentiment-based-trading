@@ -2554,10 +2554,12 @@ _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
 # ── Process pending free-text message ─────────────────────────────────────────
-if st.session_state.sage_pending:
+# Two-rerun pattern:
+#   Rerun 1: sage_pending set, sage_thinking=True  → _render_sage_panel shows bubble, then st.rerun() at end
+#   Rerun 2: sage_pending set, sage_thinking=False → process message here
+if st.session_state.sage_pending and not st.session_state.sage_thinking:
     _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
-    st.session_state.sage_thinking = False
 
     _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
                       "bullish","sell","buy","confidence","what","which","top",
@@ -2878,6 +2880,9 @@ def _render_sage_panel():
   </div>
 </div>
 """, unsafe_allow_html=True)
+        # Flip flag then rerun so the processing block runs on next pass
+        st.session_state.sage_thinking = False
+        st.rerun()
 
     _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if _inp:
