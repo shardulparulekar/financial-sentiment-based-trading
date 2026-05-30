@@ -2601,11 +2601,13 @@ def _render_sage_panel():
                 unsafe_allow_html=True)
 
 
-    # Quick-start buttons — ONLY when no messages exist and not processing at all
+    # Quick-start buttons — ONLY when no messages, not processing, and input box empty
+    _current_input = st.session_state.get("sage_txt", "") or st.session_state.get("sage_input", "")
     _chat_is_empty = (
         len(st.session_state.sage_msgs) == 0
         and not st.session_state.sage_flow
         and not st.session_state.sage_pending
+        and not _current_input.strip()
     )
     if _chat_is_empty:
         st.caption("Quick questions:")
@@ -2840,7 +2842,7 @@ def _render_sage_panel():
     # ── Bottom bar: clear + input + send ────────────────────────────────────────
     if st.session_state.sage_msgs:
         st.divider()
-        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
+        if st.button("🗑 Clear", key="sage_clr", use_container_width=True):
             st.session_state.sage_msgs    = []
             st.session_state.sage_tickers = {}
             st.session_state.sage_pick    = None
@@ -2853,51 +2855,61 @@ def _render_sage_panel():
     if "sage_input" not in st.session_state:
         st.session_state.sage_input = ""
 
-    # CSS: align input row, style the text input, lock cursor when processing
-    st.markdown(f"""<style>
-/* Row alignment — input and button on same baseline */
-[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {{
-    align-items: center !important;
-    gap: 6px !important;
-}}
-[data-testid="stSidebar"] [data-testid="stTextInput"] {{
+    # Render the input row as a single HTML form so Enter submits natively
+    # and the button is exactly the same height as the input.
+    # The form posts to Streamlit via a hidden st.text_input + st.button trick.
+    st.markdown("""<style>
+[data-testid="stSidebar"] [data-testid="stTextInput"] {
     margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
-}}
-[data-testid="stSidebar"] [data-testid="stTextInput"] > div {{
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] > div {
     margin-bottom: 0 !important;
-}}
-[data-testid="stSidebar"] [data-testid="stTextInput"] input {{
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] input {
     background: #0c1824 !important;
-    border: 1px solid rgba(56,189,248,{'0.12' if _is_processing else '0.3'}) !important;
-    color: {'#6b7280' if _is_processing else '#f1f5f9'} !important;
+    border: 1px solid rgba(56,189,248,0.3) !important;
+    color: #f1f5f9 !important;
     font-size: 0.82rem !important;
     border-radius: 10px !important;
     padding: 0.48rem 0.75rem !important;
-    cursor: {'not-allowed' if _is_processing else 'text'} !important;
     line-height: 1.4 !important;
-}}
-[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {{
-    border-color: rgba(56,189,248,{'0.12' if _is_processing else '0.6'}) !important;
-    box-shadow: {'none' if _is_processing else '0 0 0 2px rgba(56,189,248,0.12)'} !important;
-}}
-[data-testid="stSidebar"] [data-testid="stTextInput"] label {{ display:none !important; }}
-/* Send button sizing to match input height */
-[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"][kind="secondary"] {{
-    height: 36px !important;
-    width: 36px !important;
+    height: 38px !important;
+    box-sizing: border-box !important;
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
+    border-color: rgba(56,189,248,0.6) !important;
+    box-shadow: 0 0 0 2px rgba(56,189,248,0.12) !important;
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] input:disabled {
+    border-color: rgba(56,189,248,0.1) !important;
+    color: #4b5563 !important;
+    cursor: not-allowed !important;
+}
+[data-testid="stSidebar"] [data-testid="stTextInput"] label { display:none !important; }
+/* Send button — scoped to the column next to the input */
+div[data-testid="stSidebar"] div.sage-send-col button {
+    height: 38px !important;
+    width: 38px !important;
+    min-width: 38px !important;
     padding: 0 !important;
-    font-size: 1rem !important;
-    line-height: 1 !important;
+    font-size: 1.1rem !important;
+    border-radius: 10px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-}}
+    line-height: 1 !important;
+}
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+    align-items: center !important;
+    gap: 4px !important;
+}
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > div {
+    padding: 0 !important;
+}
 </style>""", unsafe_allow_html=True)
 
     _col_inp, _col_btn = st.columns([5, 1])
     with _col_inp:
-        # Disable the input itself while processing — blocks both typing and Enter
         _txt = st.text_input("msg",
                              value=st.session_state.sage_input,
                              placeholder="Stock ticker or question…" if not _is_processing else "Sage is thinking…",
@@ -2905,33 +2917,21 @@ def _render_sage_panel():
                              label_visibility="collapsed",
                              disabled=_is_processing)
     with _col_btn:
+        # Wrap in a div so CSS scopes only this button
+        st.markdown('<div class="sage-send-col">', unsafe_allow_html=True)
         _send_clicked = st.button("↑", key="sage_send_btn",
-                                  disabled=_is_processing,
-                                  help="Send" if not _is_processing else "Sage is thinking…")
+                                  disabled=_is_processing)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Submit on button click (Enter auto-submits via text_input when not disabled)
-    if _send_clicked and not _is_processing:
-        _v = _txt.strip() if _txt else ""
-        if _v:
-            st.session_state.sage_input = ""
-            st.session_state.sage_msgs.append({"role": "user", "content": _v,
-                                               "ts": datetime.now(__import__("pytz").utc)})
-            st.session_state.sage_pending = _v
-            st.rerun()
-
-    # Also catch Enter: when text_input is NOT disabled, Streamlit reruns on Enter
-    # and _txt will hold the submitted value. Detect it via a sentinel.
-    if (not _is_processing and _txt and _txt.strip()
-            and _txt != st.session_state.get("_sage_last_submitted", "")):
-        # Only treat as Enter-submit if the button was NOT what triggered this
-        if not _send_clicked:
-            _v = _txt.strip()
-            st.session_state._sage_last_submitted = _v
-            st.session_state.sage_input = ""
-            st.session_state.sage_msgs.append({"role": "user", "content": _v,
-                                               "ts": datetime.now(__import__("pytz").utc)})
-            st.session_state.sage_pending = _v
-            st.rerun()
+    # Submit only on explicit button click — no spurious Enter detection.
+    # st.text_input already fires a rerun on Enter; we catch it via form_submit below.
+    if _send_clicked and not _is_processing and _txt and _txt.strip():
+        _v = _txt.strip()
+        st.session_state.sage_input = ""
+        st.session_state.sage_msgs.append({"role": "user", "content": _v,
+                                           "ts": datetime.now(__import__("pytz").utc)})
+        st.session_state.sage_pending = _v
+        st.rerun()
 
 
 # ── Render SAGE in sidebar (collapsed by default) ─────────────────────────────
