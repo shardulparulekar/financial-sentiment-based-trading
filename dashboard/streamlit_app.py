@@ -2242,7 +2242,6 @@ if "sage_pending"      not in st.session_state: st.session_state.sage_pending   
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
-if "sage_thinking"     not in st.session_state: st.session_state.sage_thinking     = False
 # sage_open already initialised before set_page_config above
 
 
@@ -2554,12 +2553,23 @@ _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
 # ── Process pending free-text message ─────────────────────────────────────────
-# Two-rerun pattern:
-#   Rerun 1: sage_pending set, sage_thinking=True  → _render_sage_panel shows bubble, then st.rerun() at end
-#   Rerun 2: sage_pending set, sage_thinking=False → process message here
-if st.session_state.sage_pending and not st.session_state.sage_thinking:
+# Phase 1 (sage_pending set): append user msg + thinking sentinel, rerun to render bubble.
+# Phase 2 (sage_msgs[-1] is thinking sentinel): do the real work, replace sentinel with reply.
+if st.session_state.sage_pending:
     _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
+    st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+    st.session_state.sage_msgs.append({"role": "assistant", "content": "__THINKING__", "thinking": True})
+    st.rerun()
+
+if st.session_state.sage_msgs and st.session_state.sage_msgs[-1].get("thinking"):
+    # Pop the sentinel and get the user query from the message before it
+    st.session_state.sage_msgs.pop()
+    _pend_msg = st.session_state.sage_msgs[-1]
+    _pend = _pend_msg["content"]
+    # Remove the user msg too — re-append it below so index bookkeeping stays correct
+    st.session_state.sage_msgs.pop()
+    st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
 
     _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
                       "bullish","sell","buy","confidence","what","which","top",
@@ -2571,8 +2581,7 @@ if st.session_state.sage_pending and not st.session_state.sage_thinking:
     _hits = _sk_find(_pend)
 
     if _hits and len(_hits) == 1:
-        # Unambiguous ticker match — fetch fresh signal
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        # Unambiguous ticker match — fetch fresh signal (user msg already appended above)
         _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
         # Fix 3: store with correct message index (assistant msg goes next)
         if _ttup:
@@ -2625,12 +2634,10 @@ if st.session_state.sage_pending and not st.session_state.sage_thinking:
         _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
                    .replace("\n_Data-driven — AI model offline._", "")\
                    .strip()
-        st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
         st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
 
     else:
-        # Short unknown word — assume it's a ticker — ask which market
-        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        # Short unknown word — assume it's a ticker — ask which market (user msg already appended)
         st.session_state.sage_msgs.append({
             "role": "assistant",
             "content": f"Which market is **{_pend.upper()}** traded on?",
@@ -2707,7 +2714,6 @@ def _render_sage_panel():
                     "High-confidence SELL signals?"]:
             if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
                 st.session_state.sage_pending = _sg
-                st.session_state.sage_thinking = True
                 st.rerun()
         st.caption("Or type any ticker below ↓")
 
@@ -2717,6 +2723,40 @@ def _render_sage_panel():
 
     for _mi, _msg in enumerate(_recent):
         _is_user = _msg["role"] == "user"
+
+        # ── Thinking sentinel: render animated bubble instead of normal message ──
+        if _msg.get("thinking"):
+            st.markdown("""
+<style>
+@keyframes sage-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40%            { transform: translateY(-5px); opacity: 1; }
+}
+.sage-thinking-wrap { margin-bottom: 0.4rem; }
+.sage-thinking-lbl  { font-size:0.6rem; color:#38bdf8; font-family:monospace; margin-bottom:3px; }
+.sage-thinking-bubble {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(8,20,40,0.7);
+  border: 1px solid rgba(0,229,255,0.2);
+  border-radius: 12px 12px 12px 3px;
+  padding: 0.5rem 0.85rem;
+}
+.sage-thinking-bubble span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #00e5ff; display: inline-block;
+  animation: sage-dot-bounce 1.1s ease-in-out infinite;
+}
+.sage-thinking-bubble span:nth-child(2) { animation-delay:.18s; opacity:.75; }
+.sage-thinking-bubble span:nth-child(3) { animation-delay:.36s; opacity:.5;  }
+</style>
+<div class="sage-thinking-wrap">
+  <div class="sage-thinking-lbl">Sage</div>
+  <div class="sage-thinking-bubble">
+    <span></span><span></span><span></span>
+  </div>
+</div>""", unsafe_allow_html=True)
+            continue  # skip normal message rendering for this sentinel
+
         _bg   = "rgba(30,41,59,0.8)"  if _is_user else "rgba(8,20,40,0.7)"
         _br   = "12px 12px 3px 12px"  if _is_user else "12px 12px 12px 3px"
         _ml   = "1.2rem" if _is_user else "0"
@@ -2818,76 +2858,11 @@ def _render_sage_panel():
             st.session_state.sage_tickers = {}
             st.session_state.sage_pick    = None
             st.session_state.sage_flow    = None
-            st.session_state.sage_thinking = False
             st.rerun()
-
-    # ── Thinking animation bubble ─────────────────────────────────────────────
-    if st.session_state.sage_thinking:
-        st.markdown("""
-<style>
-@keyframes sage-dot-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-  40%            { transform: translateY(-6px); opacity: 1; }
-}
-@keyframes sage-pulse-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(0,229,255,0.35); }
-  70%  { box-shadow: 0 0 0 7px rgba(0,229,255,0); }
-  100% { box-shadow: 0 0 0 0 rgba(0,229,255,0); }
-}
-.sage-thinking-bubble {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  background: rgba(8,20,40,0.7);
-  border: 1px solid rgba(0,229,255,0.18);
-  border-radius: 12px 12px 12px 3px;
-  padding: 0.55rem 0.9rem;
-  margin-right: 1.2rem;
-  margin-bottom: 0.4rem;
-  width: fit-content;
-  animation: sage-pulse-ring 1.8s ease-out infinite;
-}
-.sage-thinking-label {
-  font-size: 0.6rem;
-  color: #38bdf8;
-  font-family: monospace;
-  margin-bottom: 3px;
-}
-.sage-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #00e5ff;
-  display: inline-block;
-  animation: sage-dot-bounce 1.2s ease-in-out infinite;
-}
-.sage-dot:nth-child(2) { animation-delay: 0.18s; background: rgba(0,229,255,0.75); }
-.sage-dot:nth-child(3) { animation-delay: 0.36s; background: rgba(0,229,255,0.5); }
-.sage-thinking-text {
-  font-size: 0.72rem;
-  color: #94a3b8;
-  font-style: italic;
-  margin-left: 2px;
-}
-</style>
-<div style="margin-bottom:0.4rem;">
-  <div class="sage-thinking-label">Sage</div>
-  <div class="sage-thinking-bubble">
-    <span class="sage-dot"></span>
-    <span class="sage-dot"></span>
-    <span class="sage-dot"></span>
-    <span class="sage-thinking-text">Analysing…</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-        # Flip flag then rerun so the processing block runs on next pass
-        st.session_state.sage_thinking = False
-        st.rerun()
 
     _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if _inp:
         st.session_state.sage_pending = _inp
-        st.session_state.sage_thinking = True
         st.rerun()
 
 
