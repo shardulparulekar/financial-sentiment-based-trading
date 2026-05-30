@@ -2134,13 +2134,23 @@ section[data-testid="stSidebar"] > div > div > div > button {
     width: 0 !important; height: 0 !important;
     overflow: hidden !important; pointer-events: none !important;
 }
-/* stChatInput styling removed — using st.text_input */
+/* ── Chat input ──────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
+    background: #0c1824 !important;
+    border: 1px solid rgba(56,189,248,0.25) !important;
+    color: #f1f5f9 !important; font-size: 0.8rem !important;
+    border-radius: 10px !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatInput"] button {
+    background: rgba(56,189,248,0.15) !important;
+    border: 1px solid rgba(56,189,248,0.3) !important;
+    color: #38bdf8 !important;
+}
 [data-testid="stSidebar"] .stButton > button { font-size: 0.75rem !important; }
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-user"],
 [data-testid="stSidebar"] [data-testid="chatAvatarIcon-assistant"],
 [data-testid="stSidebar"] [class*="avatarIcon"],
 [data-testid="stSidebar"] [class*="Avatar"] { display: none !important; }
-/* stChatInput removed — using st.text_input instead */
 </style>
 """, unsafe_allow_html=True)
 
@@ -2229,10 +2239,10 @@ section[data-testid="stSidebar"] > div > div > div > button {
 
 if "sage_msgs"         not in st.session_state: st.session_state.sage_msgs         = []
 if "sage_pending"      not in st.session_state: st.session_state.sage_pending      = None
-if "sage_thinking"     not in st.session_state: st.session_state.sage_thinking     = False
 if "sage_tickers"      not in st.session_state: st.session_state.sage_tickers      = {}
 if "sage_pick"         not in st.session_state: st.session_state.sage_pick         = None
 if "sage_flow"         not in st.session_state: st.session_state.sage_flow         = None
+if "sage_thinking"     not in st.session_state: st.session_state.sage_thinking     = False
 # sage_open already initialised before set_page_config above
 
 
@@ -2543,6 +2553,91 @@ _EU_MKT        = "🇪🇺 Europe"
 _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
+# ── Process pending free-text message ─────────────────────────────────────────
+if st.session_state.sage_pending:
+    _pend = st.session_state.sage_pending
+    st.session_state.sage_pending = None
+    st.session_state.sage_thinking = False
+
+    _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
+                      "bullish","sell","buy","confidence","what","which","top",
+                      "high","low","best","worst","today","now","right","explain",
+                      "tell","show","give","list","any","all","current","overall"}
+    _pend_words   = set(_pend.lower().replace("?","").replace("-"," ").split())
+    _is_general_q = len(_pend_words & _GENERAL_WORDS) >= 2 or len(_pend.split()) > 4
+
+    _hits = _sk_find(_pend)
+
+    if _hits and len(_hits) == 1:
+        # Unambiguous ticker match — fetch fresh signal
+        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
+        # Fix 3: store with correct message index (assistant msg goes next)
+        if _ttup:
+            _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
+                     len(st.session_state.sage_msgs))  # index of assistant msg
+        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
+        if _ttup and _tkey:
+            st.session_state.sage_tickers[_tkey] = _ttup
+        # Save fresh signal to Supabase so it appears in top signals on home page
+        if _ttup and _tkey:
+            _m2s, _e2s, _d2s, _c2s, _ = _ttup
+            try:
+                from src.feedback_logger import FeedbackLogger
+                from datetime import date as _date_s
+                _sig_to_save = st.session_state.sage_fresh_signals.get(_tkey, {})
+                # Parse signal from reply text
+                _is_buy_s = "BUY" in _rep
+                _conf_s   = float(next((p.split("%")[0] for p in _rep.split() if "%" in p), "50")) / 100
+                _sent_s   = float(next((p for p in _rep.replace("(","").replace(")","").split()
+                                        if p.startswith(("+","-")) and "." in p), "0"))
+                FeedbackLogger().log_prediction(
+                    ticker=_tkey,
+                    trade_date=_date_s.today().isoformat(),
+                    predicted=1 if _is_buy_s else -1,
+                    confidence=_conf_s,
+                    sentiment=_sent_s,
+                    force=True
+                )
+            except Exception:
+                pass
+        load_top_signals.clear()
+
+    elif _is_general_q:
+        # Fix 4: fetch LIVE signals and sentiment, no "AI model offline" message
+        _top  = load_top_signals(n=20)
+        _sent = load_market_sentiment()
+        _ctx  = []
+        if _top is not None and not _top.empty:
+            _ctx.append("Signals: " + ", ".join(
+                f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
+                for _, r in _top.head(10).iterrows()))
+        if _sent:
+            _ctx.append("Sentiment: " + " | ".join(
+                f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
+                for mk, d in _sent.items()))
+        # Try HF model first; _synth_answer is the fallback but remove "offline" note
+        _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
+                        "\n".join(_ctx) or "No data.")
+        # Strip the "AI model offline" footer since data IS live from Supabase/FinBERT
+        _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
+                   .replace("\n_Data-driven — AI model offline._", "")\
+                   .strip()
+        st.session_state.sage_msgs.append({"role": "user",      "content": _pend})
+        st.session_state.sage_msgs.append({"role": "assistant", "content": _rep, "ts": datetime.now(__import__("pytz").utc)})
+
+    else:
+        # Short unknown word — assume it's a ticker — ask which market
+        st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
+        st.session_state.sage_msgs.append({
+            "role": "assistant",
+            "content": f"Which market is **{_pend.upper()}** traded on?",
+            "wizard": "market"
+        })
+        st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
+
+
+
 # ── SAGE icon ──────────────────────────────────────────────────────────────────
 _SAGE_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTAiIGZpbGw9IiMyNTYzZWIiLz4KICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxOC41IiB3aWR0aD0iMjAiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIxMCIgeT0iMjciIHdpZHRoPSIyMCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogIDxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KICA8cmVjdCB4PSIyNyIgeT0iMTguNSIgd2lkdGg9IjMiIGhlaWdodD0iMTEuNSIgcng9IjEuNSIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
 
@@ -2601,55 +2696,18 @@ def _render_sage_panel():
                 unsafe_allow_html=True)
 
 
-    # Quick-start buttons — ONLY when no messages, not processing, and input box empty
-    _current_input = st.session_state.get("sage_txt", "") or st.session_state.get("sage_input", "")
-    _chat_is_empty = (
-        len(st.session_state.sage_msgs) == 0
-        and not st.session_state.sage_flow
-        and not st.session_state.sage_pending
-        and not _current_input.strip()
-    )
-    if _chat_is_empty:
+    # Quick-start buttons when empty
+    if not st.session_state.sage_msgs and not st.session_state.sage_flow:
         st.caption("Quick questions:")
         for _sg in ["What's the strongest signal?",
                     "Which markets are bearish?",
                     "Top BUY signals right now",
                     "High-confidence SELL signals?"]:
             if st.button(_sg, key=f"sg_{abs(hash(_sg))}", width='stretch', type="secondary"):
-                st.session_state.sage_msgs.append({"role": "user", "content": _sg,
-                                                   "ts": datetime.now(__import__("pytz").utc)})
                 st.session_state.sage_pending = _sg
+                st.session_state.sage_thinking = True
                 st.rerun()
         st.caption("Or type any ticker below ↓")
-
-
-    # ── Thinking animation CSS ────────────────────────────────────────────────
-    st.markdown("""<style>
-@keyframes sage-dot-bounce {
-  0%, 80%, 100% { transform: translateY(0);   opacity: 0.4; }
-  40%            { transform: translateY(-5px); opacity: 1;   }
-}
-.sage-thinking-bubble {
-    display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(8,20,40,0.7);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px 12px 12px 3px;
-    padding: 0.5rem 0.75rem;
-    margin-bottom: 0.4rem;
-}
-.sage-thinking-bubble span {
-    display: inline-block;
-    width: 6px; height: 6px; border-radius: 50%;
-    background: #38bdf8;
-    animation: sage-dot-bounce 1.2s infinite ease-in-out;
-}
-.sage-thinking-bubble span:nth-child(2) { animation-delay: 0.15s; }
-.sage-thinking-bubble span:nth-child(3) { animation-delay: 0.30s; }
-.sage-thinking-label {
-    font-size: 0.6rem; color: #38bdf8; font-family: monospace;
-    margin-bottom: 2px;
-}
-</style>""", unsafe_allow_html=True)
 
     # Messages + wizard buttons
     _ticker_by_msgidx = {v[4]: (k, v) for k, v in st.session_state.sage_tickers.items() if len(v) > 4}
@@ -2750,187 +2808,81 @@ def _render_sage_panel():
                     load_top_signals.clear()
                     add_ticker_tab(_ft2, _d2, _c2, _m2, _e2)
 
-    # ── Thinking bubble — shown BETWEEN messages and chat input ─────────────────
-    # sage_pending is set by chat_input below; on the NEXT render pass (after
-    # rerun) the user msg is already in sage_msgs so it shows, then we render
-    # the bubble here, then do the heavy work, then rerun to show the answer.
-    if st.session_state.sage_pending:
-        _pend = st.session_state.sage_pending
-        st.session_state.sage_pending = None
-
-        # Thinking bubble renders right here — below all messages, above the input
-        _think_slot = st.empty()
-        _think_slot.markdown("""
-<div style="margin-bottom:0.4rem;margin-right:1.2rem">
-  <div class="sage-thinking-label">Sage</div>
-  <div class="sage-thinking-bubble">
-    <span></span><span></span><span></span>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-        # ── Do the actual work ──────────────────────────────────────────────
-        _GENERAL_WORDS = {"strongest","signal","signals","market","markets","bearish",
-                          "bullish","sell","buy","confidence","what","which","top",
-                          "high","low","best","worst","today","now","right","explain",
-                          "tell","show","give","list","any","all","current","overall"}
-        _pend_words   = set(_pend.lower().replace("?","").replace("-"," ").split())
-        _is_general_q = len(_pend_words & _GENERAL_WORDS) >= 2 or len(_pend.split()) > 4
-        _hits = _sk_find(_pend)
-
-        if _hits and len(_hits) == 1:
-            _rep, _ttup, _tkey = _resolve_and_fetch(_hits[0])
-            if _ttup:
-                _ttup = (_ttup[0], _ttup[1], _ttup[2], _ttup[3],
-                         len(st.session_state.sage_msgs))
-            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep,
-                                               "ts": datetime.now(__import__("pytz").utc)})
-            if _ttup and _tkey:
-                st.session_state.sage_tickers[_tkey] = _ttup
-            if _ttup and _tkey:
-                _m2s, _e2s, _d2s, _c2s, _ = _ttup
-                try:
-                    from src.feedback_logger import FeedbackLogger
-                    from datetime import date as _date_s
-                    _is_buy_s = "BUY" in _rep
-                    _conf_s   = float(next((p.split("%")[0] for p in _rep.split() if "%" in p), "50")) / 100
-                    _sent_s   = float(next((p for p in _rep.replace("(","").replace(")","").split()
-                                            if p.startswith(("+","-")) and "." in p), "0"))
-                    FeedbackLogger().log_prediction(
-                        ticker=_tkey,
-                        trade_date=_date_s.today().isoformat(),
-                        predicted=1 if _is_buy_s else -1,
-                        confidence=_conf_s,
-                        sentiment=_sent_s,
-                        force=True
-                    )
-                except Exception:
-                    pass
-            load_top_signals.clear()
-
-        elif _is_general_q:
-            _top  = load_top_signals(n=20)
-            _sent = load_market_sentiment()
-            _ctx  = []
-            if _top is not None and not _top.empty:
-                _ctx.append("Signals: " + ", ".join(
-                    f"{r['ticker']} {'BUY' if int(r['predicted'])==1 else 'SELL'} {float(r['confidence']):.0%}"
-                    for _, r in _top.head(10).iterrows()))
-            if _sent:
-                _ctx.append("Sentiment: " + " | ".join(
-                    f"{mk}: {d.get('label','?')} ({d.get('score',0):+.3f})"
-                    for mk, d in _sent.items()))
-            _rep = _hf_call(st.session_state.sage_msgs + [{"role":"user","content":_pend}],
-                            "\n".join(_ctx) or "No data.")
-            _rep = _rep.replace("\n\n_Data-driven — AI model offline._", "")\
-                       .replace("\n_Data-driven — AI model offline._", "")\
-                       .strip()
-            st.session_state.sage_msgs.append({"role": "assistant", "content": _rep,
-                                               "ts": datetime.now(__import__("pytz").utc)})
-
-        else:
-            st.session_state.sage_msgs.append({
-                "role": "assistant",
-                "content": f"Which market is **{_pend.upper()}** traded on?",
-                "wizard": "market"
-            })
-            st.session_state.sage_flow = {"step": "market", "ticker": _pend.upper()}
-
-        # Collapse the bubble slot and rerun to render the real answer
-        _think_slot.empty()
-        st.rerun()
-
-    # ── Bottom bar: clear + input + send ────────────────────────────────────────
+    # Clear + chat input
     if st.session_state.sage_msgs:
         st.divider()
-        if st.button("🗑 Clear", key="sage_clr", use_container_width=True):
+        if st.button("🗑 Clear", key="sage_clr", type="secondary", width='stretch'):
             st.session_state.sage_msgs    = []
             st.session_state.sage_tickers = {}
             st.session_state.sage_pick    = None
             st.session_state.sage_flow    = None
-            st.session_state.sage_input   = ""
+            st.session_state.sage_thinking = False
             st.rerun()
 
-    _is_processing = bool(st.session_state.sage_pending)
+    # ── Thinking animation bubble ─────────────────────────────────────────────
+    if st.session_state.sage_thinking:
+        st.markdown("""
+<style>
+@keyframes sage-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%            { transform: translateY(-6px); opacity: 1; }
+}
+@keyframes sage-pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(0,229,255,0.35); }
+  70%  { box-shadow: 0 0 0 7px rgba(0,229,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,229,255,0); }
+}
+.sage-thinking-bubble {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: rgba(8,20,40,0.7);
+  border: 1px solid rgba(0,229,255,0.18);
+  border-radius: 12px 12px 12px 3px;
+  padding: 0.55rem 0.9rem;
+  margin-right: 1.2rem;
+  margin-bottom: 0.4rem;
+  width: fit-content;
+  animation: sage-pulse-ring 1.8s ease-out infinite;
+}
+.sage-thinking-label {
+  font-size: 0.6rem;
+  color: #38bdf8;
+  font-family: monospace;
+  margin-bottom: 3px;
+}
+.sage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00e5ff;
+  display: inline-block;
+  animation: sage-dot-bounce 1.2s ease-in-out infinite;
+}
+.sage-dot:nth-child(2) { animation-delay: 0.18s; background: rgba(0,229,255,0.75); }
+.sage-dot:nth-child(3) { animation-delay: 0.36s; background: rgba(0,229,255,0.5); }
+.sage-thinking-text {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin-left: 2px;
+}
+</style>
+<div style="margin-bottom:0.4rem;">
+  <div class="sage-thinking-label">Sage</div>
+  <div class="sage-thinking-bubble">
+    <span class="sage-dot"></span>
+    <span class="sage-dot"></span>
+    <span class="sage-dot"></span>
+    <span class="sage-thinking-text">Analysing…</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-    if "sage_input" not in st.session_state:
-        st.session_state.sage_input = ""
-
-    # Render the input row as a single HTML form so Enter submits natively
-    # and the button is exactly the same height as the input.
-    # The form posts to Streamlit via a hidden st.text_input + st.button trick.
-    st.markdown("""<style>
-[data-testid="stSidebar"] [data-testid="stTextInput"] {
-    margin-bottom: 0 !important;
-}
-[data-testid="stSidebar"] [data-testid="stTextInput"] > div {
-    margin-bottom: 0 !important;
-}
-[data-testid="stSidebar"] [data-testid="stTextInput"] input {
-    background: #0c1824 !important;
-    border: 1px solid rgba(56,189,248,0.3) !important;
-    color: #f1f5f9 !important;
-    font-size: 0.82rem !important;
-    border-radius: 10px !important;
-    padding: 0.48rem 0.75rem !important;
-    line-height: 1.4 !important;
-    height: 38px !important;
-    box-sizing: border-box !important;
-}
-[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
-    border-color: rgba(56,189,248,0.6) !important;
-    box-shadow: 0 0 0 2px rgba(56,189,248,0.12) !important;
-}
-[data-testid="stSidebar"] [data-testid="stTextInput"] input:disabled {
-    border-color: rgba(56,189,248,0.1) !important;
-    color: #4b5563 !important;
-    cursor: not-allowed !important;
-}
-[data-testid="stSidebar"] [data-testid="stTextInput"] label { display:none !important; }
-/* Send button — scoped to the column next to the input */
-div[data-testid="stSidebar"] div.sage-send-col button {
-    height: 38px !important;
-    width: 38px !important;
-    min-width: 38px !important;
-    padding: 0 !important;
-    font-size: 1.1rem !important;
-    border-radius: 10px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    line-height: 1 !important;
-}
-[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-    align-items: center !important;
-    gap: 4px !important;
-}
-[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > div {
-    padding: 0 !important;
-}
-</style>""", unsafe_allow_html=True)
-
-    _col_inp, _col_btn = st.columns([5, 1])
-    with _col_inp:
-        _txt = st.text_input("msg",
-                             value=st.session_state.sage_input,
-                             placeholder="Stock ticker or question…" if not _is_processing else "Sage is thinking…",
-                             key="sage_txt",
-                             label_visibility="collapsed",
-                             disabled=_is_processing)
-    with _col_btn:
-        # Wrap in a div so CSS scopes only this button
-        st.markdown('<div class="sage-send-col">', unsafe_allow_html=True)
-        _send_clicked = st.button("↑", key="sage_send_btn",
-                                  disabled=_is_processing)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Submit only on explicit button click — no spurious Enter detection.
-    # st.text_input already fires a rerun on Enter; we catch it via form_submit below.
-    if _send_clicked and not _is_processing and _txt and _txt.strip():
-        _v = _txt.strip()
-        st.session_state.sage_input = ""
-        st.session_state.sage_msgs.append({"role": "user", "content": _v,
-                                           "ts": datetime.now(__import__("pytz").utc)})
-        st.session_state.sage_pending = _v
+    _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
+    if _inp:
+        st.session_state.sage_pending = _inp
+        st.session_state.sage_thinking = True
         st.rerun()
 
 
