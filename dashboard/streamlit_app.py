@@ -2620,8 +2620,9 @@ def _render_sage_panel():
                 unsafe_allow_html=True)
 
 
-    # Quick-start buttons when empty
-    if not st.session_state.sage_msgs and not st.session_state.sage_flow:
+    # Quick-start buttons when empty (hidden during processing)
+    _processing = st.session_state.get("_sage_process") or st.session_state.get("_sage_quick")
+    if not st.session_state.sage_msgs and not st.session_state.sage_flow and not _processing:
         st.caption("Quick questions:")
         _quick_inp = None
         for _sg in ["What's the strongest signal?",
@@ -2745,15 +2746,21 @@ def _render_sage_panel():
             st.session_state.sage_flow    = None
             st.rerun()
 
+    # ── Reserve slots ABOVE the chat input for user msg + thinking bubble ────
+    # These st.empty() placeholders sit in DOM order above st.chat_input,
+    # so when filled they appear above the text box, not below it.
+    _user_slot  = st.empty()
+    _think_slot = st.empty()
+
     _inp = st.chat_input("Stock ticker or question…", key="sage_inp")
     if not _inp and st.session_state.get("_sage_process"):
         _inp = st.session_state.pop("_sage_process")
     if _inp:
         _pend = _inp
 
-        # ── Show user message immediately ────────────────────────────────────
+        # ── Fill user message slot ────────────────────────────────────────────
         _user_ts = datetime.now(__import__("pytz").utc)
-        st.markdown(f"""
+        _user_slot.markdown(f"""
 <div style="margin-bottom:0.4rem;margin-left:1.2rem;margin-right:0">
   <div style="font-size:0.6rem;color:#475569;margin-bottom:2px;
               text-align:right;font-family:monospace;">You · {_user_ts.strftime("%H:%M UTC")}</div>
@@ -2762,8 +2769,7 @@ def _render_sage_panel():
               border:1px solid rgba(255,255,255,0.07);">{_pend}</div>
 </div>""", unsafe_allow_html=True)
 
-        # ── Show thinking bubble via st.empty() ──────────────────────────────
-        _think_slot = st.empty()
+        # ── Fill thinking bubble slot ─────────────────────────────────────────
         _think_slot.markdown("""
 <style>
 @keyframes sage-dot-bounce {
