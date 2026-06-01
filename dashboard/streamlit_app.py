@@ -2553,16 +2553,28 @@ _ALL_EXCHANGES = list(EU_EXCHANGES.keys())
 
 
 # ── Process pending free-text message ─────────────────────────────────────────
-# Phase 1 (sage_pending set): append user msg + thinking sentinel, rerun to render bubble.
-# Phase 2 (sage_msgs[-1] is thinking sentinel): do the real work, replace sentinel with reply.
+# 3-rerun cycle:
+#   Rerun A (sage_pending set):
+#       → append user msg + sentinel {"thinking":True, "ready":False}
+#       → st.rerun()  [panel renders bubble this pass]
+#   Rerun B (sentinel present, ready=False):
+#       → flip sentinel to ready=True, st.rerun()  [panel renders bubble again]
+#   Rerun C (sentinel present, ready=True):
+#       → pop sentinel, do real work, append reply
 if st.session_state.sage_pending:
     _pend = st.session_state.sage_pending
     st.session_state.sage_pending = None
     st.session_state.sage_msgs.append({"role": "user", "content": _pend, "ts": datetime.now(__import__("pytz").utc)})
-    st.session_state.sage_msgs.append({"role": "assistant", "content": "__THINKING__", "thinking": True})
+    st.session_state.sage_msgs.append({"role": "assistant", "content": "__THINKING__", "thinking": True, "ready": False})
     st.rerun()
 
-if st.session_state.sage_msgs and st.session_state.sage_msgs[-1].get("thinking"):
+_last_msg = st.session_state.sage_msgs[-1] if st.session_state.sage_msgs else {}
+if _last_msg.get("thinking") and not _last_msg.get("ready"):
+    # Bubble just rendered — mark ready so next rerun processes
+    st.session_state.sage_msgs[-1]["ready"] = True
+    st.rerun()
+
+if _last_msg.get("thinking") and _last_msg.get("ready"):
     # Pop the sentinel and get the user query from the message before it
     st.session_state.sage_msgs.pop()
     _pend_msg = st.session_state.sage_msgs[-1]
